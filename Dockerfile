@@ -7,23 +7,41 @@ ARG CODEX_VERSION=latest
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash \
+        bat \
+        btop \
         build-essential \
         ca-certificates \
         curl \
+        direnv \
+        dnsutils \
+        exa \
+        fd-find \
+        fish \
+        fzf \
         gh \
         git \
         git-lfs \
+        htop \
+        iproute2 \
+        iputils-ping \
         jq \
         less \
         lsof \
         make \
+        netcat-openbsd \
+        ncdu \
         openssh-client \
         procps \
         python3 \
         python3-pip \
         ripgrep \
         rsync \
+        shellcheck \
+        socat \
+        tree \
         unzip \
+        vim-tiny \
+        zoxide \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm install --global "@openai/codex@${CODEX_VERSION}" \
@@ -34,12 +52,14 @@ RUN git clone --filter=blob:none https://github.com/kunchenguid/firstmate.git /o
     && chown -R node:node /opt/firstmate
 
 COPY --chown=node:node docker/entrypoint.sh /usr/local/bin/firstmate-entrypoint
+COPY docker/fish/firstmate.fish /etc/fish/conf.d/firstmate.fish
 
-RUN chmod 0755 /usr/local/bin/firstmate-entrypoint
+RUN chmod 0755 /usr/local/bin/firstmate-entrypoint \
+    && chmod 0644 /etc/fish/conf.d/firstmate.fish
 
 ENV HOME=/home/node \
     USER=node \
-    SHELL=/bin/bash \
+    SHELL=/usr/bin/fish \
     FM_HOME=/home/node/.firstmate \
     FM_ROOT_OVERRIDE=/opt/firstmate \
     FM_BACKEND=herdr \
