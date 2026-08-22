@@ -92,6 +92,6 @@ docker compose exec -T firstmate bash -lc '
 echo
 echo "Base stack is ready."
 echo "Next:"
-echo "  ./scripts/login.sh"
-echo "  ./scripts/doctor.sh"
-echo "  ./scripts/connect.sh"
+echo "  fmh login"
+echo "  fmh doctor"
+echo "  fmh connect"
