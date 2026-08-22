@@ -54,7 +54,7 @@ Commands:
   down                     Stop the stack
   status                   Show Docker Compose service status
   logs                     Follow Firstmate container logs
-  shell                    Open an interactive shell in the Firstmate container
+  shell                    Open the configured Fish developer shell
   projects                 List Firstmate-managed projects
   paths                    Show installation, volume and project paths
   uninstall [--purge]      Remove the global launcher and keep persistent data
@@ -142,7 +142,7 @@ main() {
     logs) compose logs -f firstmate "$@" ;;
     shell)
       compose up -d >/dev/null
-      compose exec -it firstmate bash
+      compose exec -it firstmate fish
       ;;
     projects)
       compose up -d >/dev/null
