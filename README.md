@@ -189,6 +189,33 @@ Check the toolchain and report any blocker before changing a project.
 
 From that point, talk to the captain rather than manually starting workers.
 
+### Leaving a session
+
+`fmh shell` opens an ordinary interactive shell in the container. Leave it with:
+
+```text
+exit
+```
+
+or press `Ctrl+D`.
+
+`fmh connect` is different: it attaches to the persistent Herdr session. If you
+only want to leave the terminal **without stopping the panes or agents**, detach
+from Herdr with:
+
+```text
+Ctrl+B, then Q
+```
+
+You can later return to the same session with:
+
+```bash
+fmh connect
+```
+
+Detaching is the recommended way to leave an active Firstmate/Herdr work session.
+Do not use `fmh down` merely to disconnect: that stops the Compose application.
+
 ## Where are my projects and data?
 
 The persistent named volume defaults to:
