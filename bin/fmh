@@ -18,11 +18,26 @@ load_config() {
 }
 
 compose() {
-  docker compose \
-    --project-directory "$FIRSTMATE_HOMELAB_DIR" \
-    --env-file "$FIRSTMATE_HOMELAB_DIR/.env" \
-    -f "$FIRSTMATE_HOMELAB_DIR/compose.yaml" \
-    "$@"
+  local args=(
+    --project-directory "$FIRSTMATE_HOMELAB_DIR"
+    -f "$FIRSTMATE_HOMELAB_DIR/compose.yaml"
+  )
+  if [[ -f "$FIRSTMATE_HOMELAB_DIR/.env" ]]; then
+    args+=(--env-file "$FIRSTMATE_HOMELAB_DIR/.env")
+  fi
+  docker compose "${args[@]}" "$@"
+}
+
+volume_name() {
+  local value=""
+  if [[ -f "$FIRSTMATE_HOMELAB_DIR/.env" ]]; then
+    value="$(sed -n 's/^FIRSTMATE_HOME_VOLUME=//p' "$FIRSTMATE_HOMELAB_DIR/.env" | tail -n 1)"
+    value="${value%\"}"
+    value="${value#\"}"
+    value="${value%\'}"
+    value="${value#\'}"
+  fi
+  printf '%s\n' "${value:-firstmate-homelab-home}"
 }
 
 usage() {
@@ -30,20 +45,21 @@ usage() {
 Usage: fmh <command> [options]
 
 Commands:
-  setup                 Build/start the stack and provision Firstmate tooling
-  login                 Authenticate Codex and GitHub CLI
-  doctor                Verify the installation
-  connect               Attach to the Herdr Firstmate session
-  update                Rebuild/update the stack while keeping persistent state
-  up                    Start the stack
-  down                  Stop the stack
-  status                Show Docker Compose service status
-  logs                  Follow Firstmate container logs
-  shell                 Open an interactive shell in the Firstmate container
-  projects              List Firstmate-managed projects
-  paths                 Show installation, volume and project paths
-  uninstall [--purge]   Remove the global launcher; optionally delete persistent data
-  help                  Show this help
+  setup                    Build/start the stack and provision Firstmate tooling
+  login                    Authenticate Codex and GitHub CLI
+  doctor                   Verify the installation
+  connect                  Attach to the Herdr Firstmate session
+  update                   Rebuild/update the stack while keeping persistent state
+  up                       Start the stack
+  down                     Stop the stack
+  status                   Show Docker Compose service status
+  logs                     Follow Firstmate container logs
+  shell                    Open an interactive shell in the Firstmate container
+  projects                 List Firstmate-managed projects
+  paths                    Show installation, volume and project paths
+  uninstall [--purge]      Remove the global launcher and keep persistent data
+  uninstall --purge --yes  Non-interactively delete persistent data too
+  help                     Show this help
 
 The command works from any current directory. Your current working directory is
 not used as a Firstmate workspace.
@@ -51,7 +67,7 @@ EOF
 }
 
 command_uninstall() {
-  local purge=0 assume_yes=0 arg volume_name
+  local purge=0 assume_yes=0 arg name confirmation
   while [[ $# -gt 0 ]]; do
     arg=$1
     case "$arg" in
@@ -62,18 +78,18 @@ command_uninstall() {
     shift
   done
 
-  compose down --remove-orphans
+  compose down --remove-orphans || true
 
   if [[ $purge -eq 1 ]]; then
-    volume_name="${FIRSTMATE_HOME_VOLUME:-firstmate-homelab-home}"
+    name="$(volume_name)"
     if [[ $assume_yes -ne 1 ]]; then
       cat <<EOF
-This will permanently delete Docker volume: $volume_name
+This will permanently delete Docker volume: $name
 
 That volume contains Codex/GitHub authentication, Firstmate and Herdr state,
 Treehouse state/worktrees, and Firstmate-managed project clones.
 
-Type "purge" to continue: 
+Type "purge" to continue:
 EOF
       read -r confirmation
       [[ "$confirmation" == "purge" ]] || {
@@ -83,11 +99,11 @@ EOF
     fi
 
     if [[ $purge -eq 1 ]]; then
-      if docker volume inspect "$volume_name" >/dev/null 2>&1; then
-        docker volume rm "$volume_name" >/dev/null
-        echo "Deleted persistent Docker volume: $volume_name"
+      if docker volume inspect "$name" >/dev/null 2>&1; then
+        docker volume rm "$name" >/dev/null
+        echo "Deleted persistent Docker volume: $name"
       else
-        echo "Persistent Docker volume not found: $volume_name"
+        echo "Persistent Docker volume not found: $name"
       fi
     fi
   fi
@@ -106,10 +122,10 @@ EOF
 
 main() {
   local cmd=${1:-help}
-  [[ "$cmd" == "help" || "$cmd" == "--help" || "$cmd" == "-h" ]] && {
+  if [[ "$cmd" == "help" || "$cmd" == "--help" || "$cmd" == "-h" ]]; then
     usage
     exit 0
-  }
+  fi
 
   load_config
   shift || true
@@ -124,18 +140,21 @@ main() {
     down) compose down "$@" ;;
     status) compose ps "$@" ;;
     logs) compose logs -f firstmate "$@" ;;
-    shell) compose up -d >/dev/null; exec compose exec -it firstmate bash ;;
+    shell)
+      compose up -d >/dev/null
+      compose exec -it firstmate bash
+      ;;
     projects)
       compose up -d >/dev/null
       compose exec -T firstmate bash -lc 'dir="${FM_HOME:-$HOME/.firstmate}/projects"; mkdir -p "$dir"; find "$dir" -mindepth 1 -maxdepth 1 -type d -printf "%f\n" | sort'
       ;;
     paths)
-      local volume_name mountpoint
-      volume_name="${FIRSTMATE_HOME_VOLUME:-firstmate-homelab-home}"
-      mountpoint="$(docker volume inspect "$volume_name" --format '{{ .Mountpoint }}' 2>/dev/null || true)"
+      local name mountpoint
+      name="$(volume_name)"
+      mountpoint="$(docker volume inspect "$name" --format '{{ .Mountpoint }}' 2>/dev/null || true)"
       printf 'Installation     %s\n' "$FIRSTMATE_HOMELAB_DIR"
       printf 'Config           %s\n' "$CONFIG_FILE"
-      printf 'Docker volume    %s\n' "$volume_name"
+      printf 'Docker volume    %s\n' "$name"
       printf 'Host mountpoint  %s\n' "${mountpoint:-<not created yet>}"
       printf 'Container home   %s\n' '/home/node'
       printf 'Firstmate home   %s\n' '/home/node/.firstmate'
