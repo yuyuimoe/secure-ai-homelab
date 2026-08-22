@@ -1,6 +1,10 @@
-# firstmate-homelab
+<p align="center">
+  <img src="assets/firstmate-homelab-logo.svg" alt="firstmate-homelab" width="520" />
+</p>
 
-Self-hosted Docker stack for **Firstmate + Herdr + Codex CLI**.
+<p align="center">
+  Self-hosted Docker stack for <strong>Firstmate + Herdr + Codex CLI</strong>.
+</p>
 
 The goal is to keep the agent runtime, Git worktrees, GitHub credentials and
 Firstmate state on a homelab server while using Codex through a ChatGPT login.
