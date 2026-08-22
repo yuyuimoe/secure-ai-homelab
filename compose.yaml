@@ -1,0 +1,57 @@
+name: firstmate-homelab
+
+services:
+  firstmate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        FIRSTMATE_REF: ${FIRSTMATE_REF:-main}
+        CODEX_VERSION: ${CODEX_VERSION:-latest}
+    container_name: ${CONTAINER_NAME:-firstmate}
+    hostname: firstmate
+    restart: unless-stopped
+    init: true
+    stdin_open: true
+    tty: true
+
+    environment:
+      HOME: /home/node
+      USER: node
+      SHELL: /bin/bash
+      TERM: ${TERM:-xterm-256color}
+      COLORTERM: truecolor
+
+      FM_HOME: /home/node/.firstmate
+      FM_ROOT_OVERRIDE: /opt/firstmate
+      FM_BACKEND: herdr
+      HERDR_SESSION: ${HERDR_SESSION:-firstmate}
+
+      CODEX_HOME: /home/node/.codex
+      NPM_CONFIG_PREFIX: /home/node/.local
+
+      GIT_USER_NAME: ${GIT_USER_NAME:-Firstmate}
+      GIT_USER_EMAIL: ${GIT_USER_EMAIL:-firstmate@localhost}
+
+    volumes:
+      - firstmate-home:/home/node
+
+    security_opt:
+      - no-new-privileges:true
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "command -v node >/dev/null && command -v codex >/dev/null && command -v gh >/dev/null && git -C /opt/firstmate rev-parse --is-inside-work-tree >/dev/null",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    command: ["sleep", "infinity"]
+
+volumes:
+  firstmate-home:
+    name: ${FIRSTMATE_HOME_VOLUME:-firstmate-homelab-home}
