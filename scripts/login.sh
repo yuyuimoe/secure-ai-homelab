@@ -30,4 +30,4 @@ docker compose exec -T firstmate bash -lc '
 
 echo
 echo "Authentication complete."
-echo "Run ./scripts/doctor.sh to verify the complete stack."
+echo "Run 'fmh doctor' to verify the complete stack."
