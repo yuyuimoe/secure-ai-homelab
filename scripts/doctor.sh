@@ -36,7 +36,21 @@ docker compose exec -T firstmate bash -lc '
   check_command quota-axi
 
   echo
+  echo "== Developer shell =="
+  check_command fish
+  check_command fzf
+  check_command zoxide
+  check_command rg
+  check_command exa
+  check_command batcat
+  check_command fdfind
+  check_command btop
+  check_command direnv
+  check_command shellcheck
+
+  echo
   echo "== Configuration =="
+  printf "SHELL:         %s\n" "${SHELL:-<unset>}"
   printf "FM_HOME:       %s\n" "$FM_HOME"
   printf "FM_BACKEND:    %s\n" "${FM_BACKEND:-<unset>}"
   printf "backend file:  %s\n" "$(cat "$FM_HOME/config/backend" 2>/dev/null || echo missing)"
