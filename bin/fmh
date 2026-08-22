@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/firstmate-homelab"
+CONFIG_FILE="$CONFIG_DIR/config"
+
+fail() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+load_config() {
+  [[ -f "$CONFIG_FILE" ]] || fail "Firstmate Homelab is not installed. Run ./scripts/install.sh from the repository first."
+  # shellcheck disable=SC1090
+  source "$CONFIG_FILE"
+  [[ -n "${FIRSTMATE_HOMELAB_DIR:-}" ]] || fail "FIRSTMATE_HOMELAB_DIR is missing from $CONFIG_FILE"
+  [[ -d "$FIRSTMATE_HOMELAB_DIR" ]] || fail "Installation directory no longer exists: $FIRSTMATE_HOMELAB_DIR"
+}
+
+compose() {
+  docker compose \
+    --project-directory "$FIRSTMATE_HOMELAB_DIR" \
+    --env-file "$FIRSTMATE_HOMELAB_DIR/.env" \
+    -f "$FIRSTMATE_HOMELAB_DIR/compose.yaml" \
+    "$@"
+}
+
+usage() {
+  cat <<'EOF'
+Usage: fmh <command> [options]
+
+Commands:
+  setup                 Build/start the stack and provision Firstmate tooling
+  login                 Authenticate Codex and GitHub CLI
+  doctor                Verify the installation
+  connect               Attach to the Herdr Firstmate session
+  update                Rebuild/update the stack while keeping persistent state
+  up                    Start the stack
+  down                  Stop the stack
+  status                Show Docker Compose service status
+  logs                  Follow Firstmate container logs
+  shell                 Open an interactive shell in the Firstmate container
+  projects              List Firstmate-managed projects
+  paths                 Show installation, volume and project paths
+  uninstall [--purge]   Remove the global launcher; optionally delete persistent data
+  help                  Show this help
+
+The command works from any current directory. Your current working directory is
+not used as a Firstmate workspace.
+EOF
+}
+
+command_uninstall() {
+  local purge=0 assume_yes=0 arg volume_name
+  while [[ $# -gt 0 ]]; do
+    arg=$1
+    case "$arg" in
+      --purge) purge=1 ;;
+      --yes|-y) assume_yes=1 ;;
+      *) fail "unknown uninstall option: $arg" ;;
+    esac
+    shift
+  done
+
+  compose down --remove-orphans
+
+  if [[ $purge -eq 1 ]]; then
+    volume_name="${FIRSTMATE_HOME_VOLUME:-firstmate-homelab-home}"
+    if [[ $assume_yes -ne 1 ]]; then
+      cat <<EOF
+This will permanently delete Docker volume: $volume_name
+
+That volume contains Codex/GitHub authentication, Firstmate and Herdr state,
+Treehouse state/worktrees, and Firstmate-managed project clones.
+
+Type "purge" to continue: 
+EOF
+      read -r confirmation
+      [[ "$confirmation" == "purge" ]] || {
+        echo "Purge cancelled. Persistent data was kept."
+        purge=0
+      }
+    fi
+
+    if [[ $purge -eq 1 ]]; then
+      if docker volume inspect "$volume_name" >/dev/null 2>&1; then
+        docker volume rm "$volume_name" >/dev/null
+        echo "Deleted persistent Docker volume: $volume_name"
+      else
+        echo "Persistent Docker volume not found: $volume_name"
+      fi
+    fi
+  fi
+
+  rm -f "$HOME/.local/bin/fmh" "$HOME/.local/bin/firstmate-homelab"
+  rm -f "$CONFIG_FILE"
+  rmdir "$CONFIG_DIR" 2>/dev/null || true
+
+  echo
+  echo "Firstmate Homelab launcher uninstalled."
+  if [[ $purge -eq 0 ]]; then
+    echo "Persistent Docker data was kept."
+  fi
+  echo "Repository clone kept at: $FIRSTMATE_HOMELAB_DIR"
+}
+
+main() {
+  local cmd=${1:-help}
+  [[ "$cmd" == "help" || "$cmd" == "--help" || "$cmd" == "-h" ]] && {
+    usage
+    exit 0
+  }
+
+  load_config
+  shift || true
+
+  case "$cmd" in
+    setup) exec "$FIRSTMATE_HOMELAB_DIR/scripts/setup.sh" "$@" ;;
+    login) exec "$FIRSTMATE_HOMELAB_DIR/scripts/login.sh" "$@" ;;
+    doctor) exec "$FIRSTMATE_HOMELAB_DIR/scripts/doctor.sh" "$@" ;;
+    connect) exec "$FIRSTMATE_HOMELAB_DIR/scripts/connect.sh" "$@" ;;
+    update) exec "$FIRSTMATE_HOMELAB_DIR/scripts/update.sh" "$@" ;;
+    up) compose up -d "$@" ;;
+    down) compose down "$@" ;;
+    status) compose ps "$@" ;;
+    logs) compose logs -f firstmate "$@" ;;
+    shell) compose up -d >/dev/null; exec compose exec -it firstmate bash ;;
+    projects)
+      compose up -d >/dev/null
+      compose exec -T firstmate bash -lc 'dir="${FM_HOME:-$HOME/.firstmate}/projects"; mkdir -p "$dir"; find "$dir" -mindepth 1 -maxdepth 1 -type d -printf "%f\n" | sort'
+      ;;
+    paths)
+      local volume_name mountpoint
+      volume_name="${FIRSTMATE_HOME_VOLUME:-firstmate-homelab-home}"
+      mountpoint="$(docker volume inspect "$volume_name" --format '{{ .Mountpoint }}' 2>/dev/null || true)"
+      printf 'Installation     %s\n' "$FIRSTMATE_HOMELAB_DIR"
+      printf 'Config           %s\n' "$CONFIG_FILE"
+      printf 'Docker volume    %s\n' "$volume_name"
+      printf 'Host mountpoint  %s\n' "${mountpoint:-<not created yet>}"
+      printf 'Container home   %s\n' '/home/node'
+      printf 'Firstmate home   %s\n' '/home/node/.firstmate'
+      printf 'Projects         %s\n' '/home/node/.firstmate/projects'
+      ;;
+    uninstall) command_uninstall "$@" ;;
+    *) fail "unknown command: $cmd (run 'fmh help')" ;;
+  esac
+}
+
+main "$@"
