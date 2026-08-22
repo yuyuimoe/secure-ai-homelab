@@ -19,6 +19,71 @@ By default the normal stack setup is run as part of installation. Use
 EOF
 }
 
+print_path_instructions() {
+  local shell_name
+  shell_name="$(basename "${SHELL:-sh}")"
+
+  printf '\nNote: %s is not currently in PATH.\n' "$BIN_DIR"
+  printf 'Detected login shell: %s\n\n' "$shell_name"
+
+  case "$shell_name" in
+    fish)
+      cat <<'EOF'
+Fish persists paths added with `fish_add_path` automatically:
+
+  fish_add_path ~/.local/bin
+
+The command is available immediately in the current Fish session; no shell
+restart is required.
+EOF
+      ;;
+    zsh)
+      cat <<'EOF'
+Add ~/.local/bin to Zsh and reload your configuration:
+
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+  source ~/.zshrc
+EOF
+      ;;
+    bash)
+      cat <<'EOF'
+Add ~/.local/bin to Bash and reload your configuration:
+
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+  source ~/.bashrc
+EOF
+      ;;
+    ksh)
+      cat <<'EOF'
+Add ~/.local/bin to KornShell and reload your configuration:
+
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.kshrc
+  . ~/.kshrc
+EOF
+      ;;
+    sh|dash|ash)
+      cat <<'EOF'
+Add ~/.local/bin to your POSIX shell profile and reload it:
+
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile
+  . ~/.profile
+EOF
+      ;;
+    *)
+      cat <<EOF
+Your shell is not one of the shells handled explicitly by the installer.
+Add this directory to PATH using your shell's normal configuration mechanism:
+
+  $BIN_DIR
+
+For POSIX-compatible shells, this is typically:
+
+  export PATH="\$HOME/.local/bin:\$PATH"
+EOF
+      ;;
+  esac
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-setup) RUN_SETUP=0 ;;
@@ -70,13 +135,5 @@ EOF
 
 case ":${PATH}:" in
   *":${BIN_DIR}:"*) ;;
-  *)
-    cat <<EOF
-
-Note: $BIN_DIR is not currently in PATH.
-Add it to your shell configuration, then start a new shell:
-
-  export PATH="\$HOME/.local/bin:\$PATH"
-EOF
-    ;;
+  *) print_path_instructions ;;
 esac
