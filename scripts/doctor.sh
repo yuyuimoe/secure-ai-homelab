@@ -21,6 +21,26 @@ docker compose exec -T firstmate bash -lc '
     fi
   }
 
+  check_docker_bind() {
+    local base="$1" label="$2" probe marker output
+    probe="$base/.fmh-docker-probe-$$"
+    marker="firstmate-dind-$RANDOM-$$"
+    mkdir -p "$probe"
+    printf "%s\n" "$marker" > "$probe/marker"
+
+    if output="$(docker run --rm \
+      --mount "type=bind,src=$probe,dst=/probe,readonly" \
+      busybox:1.37 cat /probe/marker 2>/dev/null)" \
+      && [[ "$output" == "$marker" ]]; then
+      printf "OK   %-22s shared with DinD\n" "$label"
+    else
+      printf "FAIL %-22s DinD cannot bind-mount this path\n" "$label"
+      failed=1
+    fi
+
+    rm -rf "$probe"
+  }
+
   echo "== Core =="
   check_command node
   check_command git
@@ -49,10 +69,25 @@ docker compose exec -T firstmate bash -lc '
   check_command shellcheck
 
   echo
+  echo "== Isolated Docker runtime =="
+  check_command docker
+  if docker info >/dev/null 2>&1; then
+    printf "OK   %-22s connected to DinD\n" "docker daemon"
+    docker version --format "Client {{.Client.Version}} / Server {{.Server.Version}}" 2>/dev/null || true
+    docker compose version 2>/dev/null || true
+    check_docker_bind "$FM_HOME/projects" "Firstmate projects"
+    check_docker_bind "$HOME/.treehouse" "Treehouse worktrees"
+  else
+    printf "FAIL %-22s cannot reach isolated DinD daemon\n" "docker daemon"
+    failed=1
+  fi
+
+  echo
   echo "== Configuration =="
   printf "SHELL:         %s\n" "${SHELL:-<unset>}"
   printf "FM_HOME:       %s\n" "$FM_HOME"
   printf "FM_BACKEND:    %s\n" "${FM_BACKEND:-<unset>}"
+  printf "DOCKER_HOST:   %s\n" "${DOCKER_HOST:-<unset>}"
   printf "backend file:  %s\n" "$(cat "$FM_HOME/config/backend" 2>/dev/null || echo missing)"
   printf "crew harness:  %s\n" "$(cat "$FM_HOME/config/crew-harness" 2>/dev/null || echo missing)"
 
