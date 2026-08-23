@@ -15,11 +15,12 @@ From the repository clone:
 
 This:
 
-1. records the absolute path of this checkout in
+1. validates Docker/Compose support for the DinD workspace mounts;
+2. records the absolute path of this checkout in
    `~/.config/firstmate-homelab/config` (or `$XDG_CONFIG_HOME` when set);
-2. installs `~/.local/bin/fmh`;
-3. installs `~/.local/bin/firstmate-homelab` as an alias;
-4. runs the normal stack setup.
+3. installs `~/.local/bin/fmh`;
+4. installs `~/.local/bin/firstmate-homelab` as an alias;
+5. runs the normal stack setup.
 
 Use `./scripts/install.sh --skip-setup` to install only the launcher.
 
@@ -55,9 +56,31 @@ fmh paths
 fmh shell
 ```
 
-`fmh paths` reports both the container paths and the actual Docker volume
-mountpoint on the host. Do not assume that Docker stores volumes under
-`/var/lib/docker`; rootless and alternative Docker setups may use another path.
+`fmh status` includes the agent container, the isolated `docker:dind` daemon and
+the one-shot project-volume initializer.
+
+`fmh logs` follows both Firstmate and DinD logs.
+
+`fmh paths` reports the persistent Firstmate home volume, the dedicated DinD data
+volume, and their actual host mountpoints. Do not assume Docker stores volumes
+under `/var/lib/docker`; rootless and alternative Docker setups may differ.
+
+## Docker from Firstmate
+
+Docker commands inside `fmh shell`, Herdr panes and Treehouse worktrees target the
+isolated DinD daemon:
+
+```bash
+docker version
+docker compose up --build
+```
+
+They do not target the physical homelab Docker socket.
+
+Project-published ports are available from Firstmate at `localhost`, because the
+agent and DinD services share one network namespace.
+
+See [docker-in-docker.md](docker-in-docker.md) for the full model.
 
 ## Persistence
 
@@ -69,20 +92,45 @@ flowchart LR
     U[User shell\nany current directory] --> CLI[fmh / firstmate-homelab]
     CLI --> CFG[~/.config/firstmate-homelab/config]
     CFG --> REPO[firstmate-homelab checkout\ncompose.yaml + scripts]
-    REPO --> DOCKER[Docker Compose]
-    DOCKER --> C[firstmate container]
-    C --> FM[Firstmate + Herdr + Codex]
-    C --> HOME[/home/node/]
-    V[(Docker named volume\nfirstmate-homelab-home)] --> HOME
-    HOME --> STATE[.firstmate/data + state + config]
-    HOME --> PROJECTS[.firstmate/projects]
-    HOME --> AUTH[.codex + GitHub auth]
-    HOME --> TREE[Treehouse state/worktrees]
+    REPO --> COMPOSE[Docker Compose]
+    COMPOSE --> FM[firstmate]
+    COMPOSE --> DIND[docker:dind]
+    HOME[(firstmate-home)] --> FM
+    HOME -->|projects + treehouse subpaths| DIND
+    DATA[(dind-data)] --> DIND
+    FM -->|TLS Docker API| DIND
 ```
 
-Removing the repository checkout is not the same thing as deleting the Docker
-volume. Conversely, deleting the Docker volume destroys persistent Firstmate
-data even if the checkout still exists.
+The Firstmate home contains authentication, agent state, project clones and
+Treehouse worktrees. The DinD data volume separately contains images, BuildKit
+cache, project containers and the inner Docker named volumes created by project
+Compose files.
+
+Removing the repository checkout does not delete either persistent volume.
+
+## Leaving interactive sessions
+
+For an ordinary shell opened with:
+
+```bash
+fmh shell
+```
+
+leave with `exit` or `Ctrl+D`.
+
+For a persistent Herdr session opened with:
+
+```bash
+fmh connect
+```
+
+detach without stopping agents with:
+
+```text
+Ctrl+B, then Q
+```
+
+Return later with `fmh connect`.
 
 ## Uninstall
 
@@ -93,8 +141,9 @@ fmh uninstall
 ```
 
 This stops the Compose application, removes the global launchers and launcher
-configuration, and **keeps** the named Docker volume. Authentication, project
-clones, Firstmate state, Herdr state and Treehouse data therefore survive.
+configuration, and **keeps all persistent volumes**. Authentication, project
+clones, Firstmate/Herdr state, Treehouse worktrees, DinD images, BuildKit cache,
+project containers and inner Docker volumes therefore survive.
 
 The repository clone is also kept. It may contain local modifications and is
 never deleted automatically.
@@ -105,9 +154,14 @@ never deleted automatically.
 fmh uninstall --purge
 ```
 
-This performs the normal uninstall and also deletes the persistent Docker volume.
-Because that destroys credentials, project clones and runtime state, the command
-requires typing `purge` explicitly.
+This performs the normal uninstall and deletes:
+
+- `firstmate-home`;
+- the DinD `/var/lib/docker` volume;
+- the DinD TLS certificate volumes.
+
+That destroys credentials, source clones, worktrees, nested project databases,
+images and build cache, so the command requires typing `purge` explicitly.
 
 For automation only, the confirmation can be bypassed with:
 
@@ -119,13 +173,12 @@ Use this only when destructive removal is intentional.
 
 ## Reinstall
 
-If a safe uninstall kept the Docker volume, reinstall from the same or a fresh
-checkout:
+If a safe uninstall kept the volumes, reinstall from the same or a fresh checkout:
 
 ```bash
 ./scripts/install.sh
 fmh doctor
 ```
 
-As long as the configured volume name is unchanged, Docker reattaches the
-persistent data when the stack starts.
+As long as the configured volume names are unchanged, Docker reattaches the
+persistent Firstmate and DinD state when the stack starts.
