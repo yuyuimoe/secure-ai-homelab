@@ -28,16 +28,32 @@ compose() {
   docker compose "${args[@]}" "$@"
 }
 
-volume_name() {
-  local value=""
+env_value() {
+  local key="$1" fallback="$2" value=""
   if [[ -f "$FIRSTMATE_HOMELAB_DIR/.env" ]]; then
-    value="$(sed -n 's/^FIRSTMATE_HOME_VOLUME=//p' "$FIRSTMATE_HOMELAB_DIR/.env" | tail -n 1)"
+    value="$(sed -n "s/^${key}=//p" "$FIRSTMATE_HOMELAB_DIR/.env" | tail -n 1)"
     value="${value%\"}"
     value="${value#\"}"
     value="${value%\'}"
     value="${value#\'}"
   fi
-  printf '%s\n' "${value:-firstmate-homelab-home}"
+  printf '%s\n' "${value:-$fallback}"
+}
+
+home_volume_name() {
+  env_value FIRSTMATE_HOME_VOLUME firstmate-homelab-home
+}
+
+dind_data_volume_name() {
+  env_value DIND_DATA_VOLUME firstmate-homelab-dind-data
+}
+
+dind_certs_ca_volume_name() {
+  env_value DIND_CERTS_CA_VOLUME firstmate-homelab-dind-certs-ca
+}
+
+dind_certs_client_volume_name() {
+  env_value DIND_CERTS_CLIENT_VOLUME firstmate-homelab-dind-certs-client
 }
 
 usage() {
@@ -47,27 +63,29 @@ Usage: fmh <command> [options]
 Commands:
   setup                    Build/start the stack and provision Firstmate tooling
   login                    Authenticate Codex and GitHub CLI
-  doctor                   Verify the installation
+  doctor                   Verify the installation, DinD and shared workspaces
   connect                  Attach to the Herdr Firstmate session
   update                   Rebuild/update the stack while keeping persistent state
-  up                       Start the stack
+  up                       Start Firstmate and the isolated Docker daemon
   down                     Stop the stack
   status                   Show Docker Compose service status
-  logs                     Follow Firstmate container logs
+  logs                     Follow Firstmate and DinD logs
   shell                    Open the configured Fish developer shell
   projects                 List Firstmate-managed projects
-  paths                    Show installation, volume and project paths
+  paths                    Show installation, persistence and Docker paths
   uninstall [--purge]      Remove the global launcher and keep persistent data
   uninstall --purge --yes  Non-interactively delete persistent data too
   help                     Show this help
 
-The command works from any current directory. Your current working directory is
-not used as a Firstmate workspace.
+Docker commands executed inside Firstmate target the isolated DinD daemon, never
+the homelab host Docker socket. The command works from any current directory.
 EOF
 }
 
 command_uninstall() {
-  local purge=0 assume_yes=0 arg name confirmation
+  local purge=0 assume_yes=0 arg confirmation
+  local -a volumes
+
   while [[ $# -gt 0 ]]; do
     arg=$1
     case "$arg" in
@@ -80,14 +98,22 @@ command_uninstall() {
 
   compose down --remove-orphans || true
 
+  volumes=(
+    "$(home_volume_name)"
+    "$(dind_data_volume_name)"
+    "$(dind_certs_ca_volume_name)"
+    "$(dind_certs_client_volume_name)"
+  )
+
   if [[ $purge -eq 1 ]]; then
-    name="$(volume_name)"
     if [[ $assume_yes -ne 1 ]]; then
       cat <<EOF
-This will permanently delete Docker volume: $name
+This will permanently delete these Docker volumes:
 
-That volume contains Codex/GitHub authentication, Firstmate and Herdr state,
-Treehouse state/worktrees, and Firstmate-managed project clones.
+  ${volumes[0]}  (credentials, Firstmate/Herdr state, projects, Treehouse worktrees)
+  ${volumes[1]}  (DinD images, build cache, project containers and inner volumes)
+  ${volumes[2]}  (DinD TLS CA)
+  ${volumes[3]}  (DinD TLS client certificates)
 
 Type "purge" to continue:
 EOF
@@ -99,12 +125,15 @@ EOF
     fi
 
     if [[ $purge -eq 1 ]]; then
-      if docker volume inspect "$name" >/dev/null 2>&1; then
-        docker volume rm "$name" >/dev/null
-        echo "Deleted persistent Docker volume: $name"
-      else
-        echo "Persistent Docker volume not found: $name"
-      fi
+      local name
+      for name in "${volumes[@]}"; do
+        if docker volume inspect "$name" >/dev/null 2>&1; then
+          docker volume rm "$name" >/dev/null
+          echo "Deleted persistent Docker volume: $name"
+        else
+          echo "Persistent Docker volume not found: $name"
+        fi
+      done
     fi
   fi
 
@@ -115,7 +144,7 @@ EOF
   echo
   echo "Firstmate Homelab launcher uninstalled."
   if [[ $purge -eq 0 ]]; then
-    echo "Persistent Docker data was kept."
+    echo "Persistent Firstmate and DinD data was kept."
   fi
   echo "Repository clone kept at: $FIRSTMATE_HOMELAB_DIR"
 }
@@ -138,8 +167,8 @@ main() {
     update) exec "$FIRSTMATE_HOMELAB_DIR/scripts/update.sh" "$@" ;;
     up) compose up -d "$@" ;;
     down) compose down "$@" ;;
-    status) compose ps "$@" ;;
-    logs) compose logs -f firstmate "$@" ;;
+    status) compose ps -a "$@" ;;
+    logs) compose logs -f firstmate docker "$@" ;;
     shell)
       compose up -d >/dev/null
       compose exec -it firstmate fish
@@ -149,16 +178,22 @@ main() {
       compose exec -T firstmate bash -lc 'dir="${FM_HOME:-$HOME/.firstmate}/projects"; mkdir -p "$dir"; find "$dir" -mindepth 1 -maxdepth 1 -type d -printf "%f\n" | sort'
       ;;
     paths)
-      local name mountpoint
-      name="$(volume_name)"
-      mountpoint="$(docker volume inspect "$name" --format '{{ .Mountpoint }}' 2>/dev/null || true)"
-      printf 'Installation     %s\n' "$FIRSTMATE_HOMELAB_DIR"
-      printf 'Config           %s\n' "$CONFIG_FILE"
-      printf 'Docker volume    %s\n' "$name"
-      printf 'Host mountpoint  %s\n' "${mountpoint:-<not created yet>}"
-      printf 'Container home   %s\n' '/home/node'
-      printf 'Firstmate home   %s\n' '/home/node/.firstmate'
-      printf 'Projects         %s\n' '/home/node/.firstmate/projects'
+      local home_name home_mount dind_name dind_mount
+      home_name="$(home_volume_name)"
+      dind_name="$(dind_data_volume_name)"
+      home_mount="$(docker volume inspect "$home_name" --format '{{ .Mountpoint }}' 2>/dev/null || true)"
+      dind_mount="$(docker volume inspect "$dind_name" --format '{{ .Mountpoint }}' 2>/dev/null || true)"
+      printf 'Installation        %s\n' "$FIRSTMATE_HOMELAB_DIR"
+      printf 'Config              %s\n' "$CONFIG_FILE"
+      printf 'Home volume         %s\n' "$home_name"
+      printf 'Home mountpoint     %s\n' "${home_mount:-<not created yet>}"
+      printf 'DinD data volume    %s\n' "$dind_name"
+      printf 'DinD mountpoint     %s\n' "${dind_mount:-<not created yet>}"
+      printf 'Container home      %s\n' '/home/node'
+      printf 'Firstmate home      %s\n' '/home/node/.firstmate'
+      printf 'Projects (shared)   %s\n' '/home/node/.firstmate/projects'
+      printf 'Treehouse (shared)  %s\n' '/home/node/.treehouse'
+      printf 'Docker endpoint     %s\n' 'tcp://localhost:2376 (isolated DinD, TLS)'
       ;;
     uninstall) command_uninstall "$@" ;;
     *) fail "unknown command: $cmd (run 'fmh help')" ;;
