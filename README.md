@@ -3,11 +3,12 @@
 </p>
 
 <p align="center">
-  Self-hosted Docker stack for <strong>Firstmate + Herdr + Codex CLI</strong>.
+  Self-hosted development environment for <strong>Firstmate + Herdr + Codex CLI</strong>.
 </p>
 
-The goal is to keep the agent runtime, Git worktrees, GitHub credentials and
-Firstmate state on a homelab server while using Codex through a ChatGPT login.
+The goal is to keep the agent runtime, Git worktrees, GitHub credentials,
+Firstmate state and project Docker workloads on a homelab server while using
+Codex through a ChatGPT login.
 
 > Herdr and Firstmate run on your infrastructure. Codex model inference still
 > runs through OpenAI.
@@ -16,42 +17,43 @@ Firstmate state on a homelab server while using Codex through a ChatGPT login.
 
 ```mermaid
 flowchart LR
-    USER["Laptop / desktop"] -->|SSH / Tailscale| HOST["Docker host"]
+    USER["Laptop / desktop"] -->|SSH / Tailscale| HOST["Homelab Docker host"]
     SHELL["Any host directory"] --> CLI["fmh"]
-    CLI --> REPO["firstmate-homelab checkout"]
-    REPO --> COMPOSE["Docker Compose"]
+    CLI --> COMPOSE["Docker Compose"]
     HOST --> COMPOSE
-    COMPOSE --> CONTAINER["firstmate container"]
-    CONTAINER --> HERDR["Herdr"]
-    HERDR --> CAPTAIN["Codex captain / Firstmate"]
-    HERDR --> WORKERS["Codex workers"]
-    CONTAINER --> TREEHOUSE["Treehouse worktrees"]
-    VOLUME[("firstmate-homelab-home\nDocker volume")] --> HOME["/home/node"]
-    HOME --> STATE["Firstmate / Herdr state"]
-    HOME --> PROJECTS["Firstmate projects"]
-    HOME --> AUTH["Codex + GitHub auth"]
-    HOME --> TREEHOUSE
+
+    COMPOSE --> FM["firstmate\nFish + Herdr + Codex"]
+    COMPOSE --> DIND["isolated Docker-in-Docker\ndockerd + BuildKit"]
+
+    FM --> HERDR["Herdr / Firstmate crew"]
+    HERDR --> TREEHOUSE["Treehouse worktrees"]
+    FM -->|"Docker CLI over TLS"| DIND
+    DIND --> PROJECTS["project containers\nnetworks + volumes"]
+
+    HOME[("firstmate-home")] --> FM
+    HOME -->|"projects + .treehouse only"| DIND
+    DATA[("dind-data")] --> DIND
 ```
 
-The repository checkout contains the Docker definition and host-side scripts.
-Persistent runtime data lives separately in the Docker named volume. The global
-`fmh` launcher remembers where the checkout lives, so you can operate the stack
-from **any current directory**.
+The physical host Docker socket is deliberately **not** mounted. Agents get a
+real Docker CLI, but it targets a dedicated DinD daemon whose images, containers,
+BuildKit cache and inner volumes are isolated from normal homelab Docker
+workloads.
 
-Your current working directory is deliberately **not** treated as a Firstmate
-workspace.
+Firstmate and DinD share one network namespace, so a project that publishes
+`3000:3000` is still reachable by agents at `http://localhost:3000`.
 
-Firstmate's Herdr backend is currently experimental upstream. Firstmate requires
-Herdr protocol 14 or newer; Herdr 0.8.0+ is preferred for its default presentation
-spaces behavior.
+The global `fmh` launcher remembers where the checkout lives, so you can operate
+the stack from **any current directory**. Your caller `pwd` is deliberately not
+treated as a Firstmate workspace.
 
 ## Requirements
 
 On the homelab host:
 
 - Linux
-- Docker Engine
-- Docker Compose v2 (`docker compose`)
+- Docker Engine 26+
+- Docker Compose v2 with `volume.subpath` support
 - outbound HTTPS access
 
 Nothing else needs to be installed on the host.
@@ -83,20 +85,21 @@ fmh doctor
 fmh connect
 ```
 
-If `~/.local/bin` is not in your `PATH`, the installer prints the line to add to
-your shell configuration.
+If `~/.local/bin` is not in your `PATH`, the installer prints shell-specific
+instructions for Fish, Zsh, Bash and other common shells.
 
 ### What installation does
 
 `./scripts/install.sh`:
 
-1. records the checkout path under `~/.config/firstmate-homelab/`;
-2. installs the global launcher in `~/.local/bin`;
-3. creates `.env` from `.env.example` if needed;
-4. builds and starts the container;
-5. installs/updates Herdr in the persistent agent home;
-6. asks Firstmate's bootstrap which supported helper tools are missing;
-7. installs the Herdr Codex integration.
+1. validates Docker/Compose support for the isolated workspace mounts;
+2. records the checkout path under `~/.config/firstmate-homelab/`;
+3. installs the global launcher in `~/.local/bin`;
+4. creates `.env` from `.env.example` if needed;
+5. starts the isolated DinD daemon and Firstmate container;
+6. installs/updates Herdr in the persistent agent home;
+7. asks Firstmate's bootstrap which supported helper tools are missing;
+8. installs the Herdr Codex integration.
 
 Use this when you only want to install the launcher without provisioning the
 stack yet:
@@ -105,29 +108,30 @@ stack yet:
 ./scripts/install.sh --skip-setup
 ```
 
-Edit `.env` to set your Git commit identity:
+Edit `.env` to set your Git identity and optionally pin upstream versions:
 
 ```dotenv
 GIT_USER_NAME=Your Name
 GIT_USER_EMAIL=your-github-noreply@example.com
+
+DOCKER_VERSION=29
+FIRSTMATE_REF=main
+CODEX_VERSION=latest
 ```
 
 ## Daily commands
 
-The launcher always targets this installation's Compose project regardless of
-your current directory.
-
 ```bash
-fmh connect     # attach to the Herdr Firstmate session
-fmh doctor      # verify the installation
-fmh status      # show Compose status
-fmh logs        # follow container logs
-fmh shell       # open a shell in the container
+fmh connect     # attach to the persistent Herdr session
+fmh doctor      # verify Firstmate, DinD and bind mounts
+fmh status      # show Firstmate / DinD / initializer status
+fmh logs        # follow Firstmate and DinD logs
+fmh shell       # open the Fish developer shell
 fmh projects    # list Firstmate-managed projects
-fmh paths       # show host/container persistence paths
+fmh paths       # show persistence and Docker paths
 fmh up          # start the stack
 fmh down        # stop the stack
-fmh update      # rebuild/update while preserving state
+fmh update      # update while preserving all persistent state
 fmh help        # complete command reference
 ```
 
@@ -139,7 +143,35 @@ cd ~ && fmh doctor
 cd ~/some-project && fmh connect
 ```
 
-The caller's `pwd` has no special meaning.
+## Docker development
+
+Inside `fmh shell`, a Herdr pane, or a Treehouse worktree, Docker behaves like a
+normal development workstation:
+
+```bash
+docker version
+docker build .
+docker compose up --build
+```
+
+Those commands **do not** target the physical homelab Docker daemon.
+
+Firstmate-managed projects and Treehouse worktrees are exposed to DinD at the
+same absolute paths, so normal project-relative bind mounts work:
+
+```yaml
+services:
+  api:
+    volumes:
+      - .:/app
+```
+
+The inner daemon persists its `/var/lib/docker` state in the dedicated
+`firstmate-homelab-dind-data` volume, so warm image/build caches and project
+Docker volumes survive `fmh update` and normal restarts.
+
+See [docs/docker-in-docker.md](docs/docker-in-docker.md) for the detailed storage,
+performance, networking and security model.
 
 ## Authenticate
 
@@ -159,7 +191,7 @@ Open the displayed URL on your normal browser and enter the one-time code. This
 uses your ChatGPT/Codex entitlement rather than an OpenAI API key.
 
 The same command starts `gh auth login` and configures Git to use GitHub CLI
-credentials. Authentication persists in the Docker named volume.
+credentials. Authentication persists in `firstmate-home`.
 
 ## Connect
 
@@ -167,8 +199,7 @@ credentials. Authentication persists in the Docker named volume.
 fmh connect
 ```
 
-This starts the stack when necessary and attaches to the named Herdr session
-inside the container.
+This starts the stack when necessary and attaches to the named Herdr session.
 
 On the first empty Herdr pane, launch:
 
@@ -187,70 +218,68 @@ Use Herdr as the runtime backend and Codex as the crew harness.
 Check the toolchain and report any blocker before changing a project.
 ```
 
-From that point, talk to the captain rather than manually starting workers.
-
 ### Leaving a session
 
-`fmh shell` opens an ordinary interactive shell in the container. Leave it with:
+For `fmh shell`, leave with `exit` or `Ctrl+D`.
 
-```text
-exit
-```
-
-or press `Ctrl+D`.
-
-`fmh connect` is different: it attaches to the persistent Herdr session. If you
-only want to leave the terminal **without stopping the panes or agents**, detach
-from Herdr with:
+For `fmh connect`, detach **without stopping panes or agents** with:
 
 ```text
 Ctrl+B, then Q
 ```
 
-You can later return to the same session with:
+Return later with:
 
 ```bash
 fmh connect
 ```
 
-Detaching is the recommended way to leave an active Firstmate/Herdr work session.
-Do not use `fmh down` merely to disconnect: that stops the Compose application.
+Do not use `fmh down` merely to disconnect; it stops Firstmate and the isolated
+Docker daemon.
 
 ## Where are my projects and data?
 
-The persistent named volume defaults to:
+The persistent Firstmate home defaults to:
 
 ```text
 firstmate-homelab-home
 ```
 
-It is mounted at `/home/node` inside the container and preserves:
+and preserves:
 
-- Codex authentication and sessions
-- GitHub CLI authentication
-- Herdr configuration/state
-- Firstmate `config/`, `data/`, `state/` and `projects/`
-- Treehouse worktrees/state
-- helper tools installed in `~/.local`
+- Codex authentication and sessions;
+- GitHub CLI authentication;
+- Herdr configuration/state;
+- Firstmate `config/`, `data/`, `state/` and `projects/`;
+- Treehouse worktrees/state;
+- helper tools installed in `~/.local`.
 
-Firstmate-managed project clones are available inside the container under:
+Firstmate-managed projects are available at:
 
 ```text
 /home/node/.firstmate/projects
 ```
 
-Do not guess the named-volume path on the host. Ask Docker:
+Treehouse worktrees live under:
+
+```text
+/home/node/.treehouse
+```
+
+Both paths are visible to DinD for project bind mounts. DinD does not receive
+ordinary mounts for `.codex` or `.config/gh`.
+
+The isolated Docker daemon persists separately in:
+
+```text
+firstmate-homelab-dind-data
+```
+
+Ask Docker for the real host mountpoints instead of guessing them:
 
 ```bash
 fmh paths
 ```
-
-Typical output includes the actual Docker mountpoint, the container home and the
-Firstmate project directory. This works with Docker installations whose volume
-root is not `/var/lib/docker` too.
-
-Do **not** use `docker compose down -v` unless you intentionally want to delete
-credentials, cloned projects, sessions and Firstmate state.
 
 ## Updating
 
@@ -258,17 +287,9 @@ credentials, cloned projects, sessions and Firstmate state.
 fmh update
 ```
 
-The image is rebuilt and the persistent toolchain is refreshed. The home volume
-is kept.
-
-For reproducibility, pin these in `.env`:
-
-```dotenv
-FIRSTMATE_REF=<firstmate commit/tag>
-CODEX_VERSION=<codex npm version>
-```
-
-The defaults (`main` and `latest`) intentionally favor easy updates.
+This refreshes the DinD/runtime images, rebuilds Firstmate and updates persistent
+user-space tooling. Authentication, projects, Treehouse worktrees, DinD images,
+BuildKit cache and inner Docker volumes are kept.
 
 ## Uninstalling
 
@@ -278,12 +299,11 @@ A normal uninstall is intentionally conservative:
 fmh uninstall
 ```
 
-It stops the Compose application and removes the global launcher/configuration,
-but **keeps the persistent Docker volume** and **does not delete your repository
-clone**.
+It removes the runtime containers and global launcher but **keeps all persistent
+Firstmate and DinD volumes**. The repository clone is also kept.
 
-To intentionally delete credentials, project clones and all persistent runtime
-state as well:
+To intentionally delete credentials, project clones, worktrees, project Docker
+containers/volumes, images and build cache as well:
 
 ```bash
 fmh uninstall --purge
@@ -292,14 +312,11 @@ fmh uninstall --purge
 The purge requires typing `purge` explicitly. Automation can opt into destructive
 removal with `fmh uninstall --purge --yes`.
 
-See [docs/cli.md](docs/cli.md) for the complete lifecycle, reinstall behavior and
-persistence model.
-
 ## Remote use
 
-No port is exposed from the container.
+No Firstmate or project port is automatically exposed on the physical host.
 
-A simple remote workflow is now:
+A normal remote workflow is:
 
 ```bash
 ssh homelab
@@ -310,13 +327,18 @@ Using Tailscale for the SSH path avoids exposing an SSH port publicly.
 
 ## Security
 
-The stack deliberately does **not** mount `/var/run/docker.sock`. Giving coding
-agents access to the host Docker daemon is effectively giving them control over
-the homelab host.
+The stack never mounts the physical `/var/run/docker.sock`. Classic DinD does,
+however, require a **privileged** sidecar, so it must not be treated as a hard
+sandbox against the homelab Linux kernel. For a stronger boundary, run the entire
+stack inside a dedicated VM.
 
-See [docs/security.md](docs/security.md) for the threat model,
-[docs/architecture.md](docs/architecture.md) for the runtime design and
-[docs/cli.md](docs/cli.md) for host-side operation and lifecycle.
+See:
+
+- [docs/security.md](docs/security.md) — threat model and privilege boundary;
+- [docs/docker-in-docker.md](docs/docker-in-docker.md) — DinD architecture and performance;
+- [docs/architecture.md](docs/architecture.md) — complete runtime design;
+- [docs/developer-shell.md](docs/developer-shell.md) — Fish and terminal tooling;
+- [docs/cli.md](docs/cli.md) — host-side operation and lifecycle.
 
 ## Upstream documentation
 
