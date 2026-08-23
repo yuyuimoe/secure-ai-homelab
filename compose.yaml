@@ -81,6 +81,7 @@ services:
         condition: service_completed_successfully
       docker:
         condition: service_healthy
+        restart: true
 
     environment:
       HOME: /home/node
