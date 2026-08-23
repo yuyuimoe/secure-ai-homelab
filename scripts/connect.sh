@@ -6,6 +6,8 @@ cd "$ROOT_DIR"
 
 docker compose up -d >/dev/null
 
+bash "$ROOT_DIR/scripts/ensure-herdr.sh"
+
 exec docker compose exec -it firstmate bash -lc '
   export PATH="$HOME/.local/bin:$PATH"
   cd /opt/firstmate
