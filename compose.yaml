@@ -10,7 +10,7 @@ services:
       - -ec
       - |
         mkdir -p /home/node/.firstmate/projects /home/node/.treehouse
-        chown -R 1000:1000 /home/node/.firstmate/projects /home/node/.treehouse
+        chown 1000:1000 /home/node/.firstmate/projects /home/node/.treehouse
     volumes:
       - firstmate-home:/home/node
 
