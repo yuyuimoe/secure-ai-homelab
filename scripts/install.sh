@@ -103,6 +103,23 @@ docker compose version >/dev/null 2>&1 || {
   exit 1
 }
 
+engine_version="$(docker version --format '{{.Server.Version}}' 2>/dev/null || true)"
+engine_major="${engine_version%%.*}"
+if [[ -z "$engine_version" || ! "$engine_major" =~ ^[0-9]+$ || "$engine_major" -lt 26 ]]; then
+  echo "Docker Engine 26 or newer is required for the isolated workspace subpath mounts." >&2
+  echo "Detected server version: ${engine_version:-unavailable}" >&2
+  exit 1
+fi
+
+# Validate the Compose model early. This catches hosts whose Compose version does
+# not understand the volume.subpath syntax used to expose only project/worktree
+# directories to DinD.
+if ! docker compose --project-directory "$ROOT_DIR" -f "$ROOT_DIR/compose.yaml" config -q; then
+  echo "The installed Docker Compose version cannot validate this stack." >&2
+  echo "Upgrade Docker Compose and retry." >&2
+  exit 1
+fi
+
 mkdir -p "$BIN_DIR" "$CONFIG_DIR"
 
 # Keep the global command independent from the caller's current directory.
