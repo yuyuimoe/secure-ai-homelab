@@ -6,6 +6,8 @@ cd "$ROOT_DIR"
 
 docker compose up -d
 
+bash "$ROOT_DIR/scripts/ensure-herdr.sh"
+
 if docker compose exec -T firstmate codex login status >/dev/null 2>&1; then
   echo "Codex is already authenticated."
 else
