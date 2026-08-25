@@ -12,37 +12,53 @@ isolated Git worktrees.
 The agent-facing tools remain in one long-lived `firstmate` container, while
 project Docker workloads are delegated to a dedicated `docker:dind` service.
 
-```text
-Homelab host
-└── Docker
-    ├── projects-init                    one-shot volume initializer
-    │
-    ├── docker (DinD, privileged)
-    │   ├── dockerd / BuildKit
-    │   ├── project containers
-    │   ├── project networks
-    │   └── /var/lib/docker              dedicated dind-data volume
-    │
-    └── firstmate (unprivileged node user)
-        ├── /opt/firstmate               disposable upstream checkout
-        ├── Fish                         interactive developer shell
-        ├── Docker CLI ────────────────► isolated DinD daemon
-        ├── Herdr
-        │   ├── Codex captain
-        │   ├── Codex worker A
-        │   └── Codex worker B
-        ├── Treehouse
-        ├── gh
-        └── /home/node                   persistent firstmate-home volume
-            ├── .codex
-            ├── .config
-            ├── .firstmate
-            │   └── projects             shared with DinD
-            ├── .local
-            └── .treehouse               shared with DinD
+```mermaid
+flowchart TB
+    subgraph HOST["Homelab Docker host"]
+        OUTER["Host Docker Engine\nouter Compose runtime"]
+        INIT["projects-init\none-shot initializer"]
+
+        subgraph NS["Shared firstmate / docker network namespace"]
+            FM["firstmate\nnode user\nFish + Herdr + Codex + Docker CLI"]
+            DIND["docker:dind\nprivileged\ndockerd + BuildKit"]
+            INNER["project containers\nnetworks + inner volumes"]
+        end
+
+        HOME[("firstmate-home")]
+        DATA[("dind-data")]
+        CA[("dind-certs-ca")]
+        CLIENT[("dind-certs-client")]
+    end
+
+    OUTER --> INIT
+    OUTER --> FM
+    OUTER --> DIND
+
+    INIT -->|"ensure .firstmate/projects + .treehouse"| HOME
+    HOME -->|"/home/node"| FM
+    HOME -->|"subpath .firstmate/projects"| DIND
+    HOME -->|"subpath .treehouse"| DIND
+
+    DATA -->|"/var/lib/docker"| DIND
+    CA -->|"/certs/ca"| DIND
+    CLIENT -->|"/certs/client"| DIND
+    CLIENT -->|"read-only client certificates"| FM
+
+    FM -->|"Docker API TLS\ntcp://localhost:2376"| DIND
+    DIND --> INNER
+    INNER -->|"published project ports\nlocalhost:<port>"| FM
+
+    SOCK["Host /var/run/docker.sock"] -. "NOT mounted" .-> FM
 ```
 
-The physical host Docker socket is never mounted into Firstmate.
+The physical host Docker Engine creates the outer Compose services, but the
+physical host Docker socket is never mounted into Firstmate. Agents therefore do
+not receive direct control over the normal homelab Docker daemon or its existing
+workloads.
+
+The `firstmate` service is the developer/agent environment. It contains the Docker
+client only. The `docker:dind` service owns the Docker daemon, BuildKit and all
+project Docker resources.
 
 ## Persistence boundary
 
@@ -61,13 +77,22 @@ locations:
 /home/node/.treehouse
 ```
 
-This is what makes project and Treehouse-worktree bind mounts resolve correctly
-when the Docker daemon lives in another container. The ordinary Codex and GitHub
-credential paths are not mounted into DinD.
+A one-shot `projects-init` service creates these directories before the DinD and
+Firstmate services start. This is required because Docker Compose `volume.subpath`
+expects the subdirectories to exist before mounting them.
+
+Keeping the paths identical in Firstmate and DinD makes project and
+Treehouse-worktree bind mounts resolve correctly when the Docker daemon lives in
+another container. The ordinary Codex and GitHub credential paths are not mounted
+into DinD.
 
 The inner Docker engine has its own persistent `dind-data` volume at
 `/var/lib/docker`, preserving image layers, BuildKit cache, project containers,
 and inner named volumes independently from Firstmate state.
+
+The official DinD TLS material is persisted separately in `dind-certs-ca` and
+`dind-certs-client`. Firstmate receives only the client certificate volume and
+mounts it read-only.
 
 A container restart still terminates Linux processes. Herdr can restore compatible
 agent sessions from persisted state, but a restart is not equivalent to detaching
@@ -92,7 +117,8 @@ http://localhost:3000
 Those inner ports are not automatically published on the physical homelab host.
 
 The Docker API itself uses the official DinD TLS mechanism and is addressed by
-Firstmate as `tcp://localhost:2376` using generated client certificates.
+Firstmate as `tcp://localhost:2376` using generated client certificates. No Docker
+API port is published on the physical host.
 
 ## Runtime selection
 
@@ -108,9 +134,9 @@ also make the operational home self-describing.
 
 ## Remote administration
 
-No Firstmate or DinD port is published on the host by default. Codex, GitHub CLI,
-installers, DinD image pulls, and project tooling use normal outbound network
-access.
+No Firstmate, DinD API or project port is published on the host by default. Codex,
+GitHub CLI, installers, DinD image pulls, and project tooling use normal outbound
+network access.
 
 For remote administration, SSH to the Docker host (optionally over Tailscale) and
 run:
@@ -121,7 +147,7 @@ fmh connect
 
 ## Docker workloads launched by agents
 
-Agents can now run normal Docker development commands inside Firstmate:
+Agents can run normal Docker development commands inside Firstmate:
 
 ```bash
 docker build .
@@ -132,6 +158,10 @@ docker run --rm ...
 These commands target the isolated DinD daemon, not the homelab Docker daemon.
 Project bind mounts are supported from Firstmate-managed project clones and
 Treehouse worktrees because those paths are explicitly shared with DinD.
+
+`fmh doctor` validates both Docker API connectivity and real bind-mount visibility
+for the Firstmate projects and Treehouse roots, catching the common case where a
+remote Docker daemon can be reached but cannot resolve the caller's filesystem.
 
 See [docker-in-docker.md](docker-in-docker.md) for storage, performance, security,
 and bind-mount details.
