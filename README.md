@@ -37,7 +37,9 @@ fmh connect
 
 ## Documentation
 
-The project documentation is centralized in **MkDocs** under [`docs/`](docs/index.md).
+The full documentation is maintained with **MkDocs Material** under [`docs/`](docs/index.md) and is published at:
+
+**https://sangimed.github.io/firstmate-homelab/**
 
 Run it locally with:
 
@@ -50,12 +52,14 @@ make docs-serve
 
 Then open `http://127.0.0.1:8000`.
 
-The documentation covers installation, daily CLI usage, Docker development, the developer shell, configuration, architecture and security.
+The documentation covers installation, daily CLI usage, Docker development, the developer shell, configuration, architecture, security and documentation deployment.
 
 ```bash
 make docs-build   # validate/build the static site
 make docs-serve   # local live-reload server
 ```
+
+Documentation changes are validated on pull requests and deployed to GitHub Pages after they reach `main`.
 
 ## Upstream projects
 
