@@ -1,8 +1,19 @@
+<div align="center" markdown>
+
+<img src="assets/firstmate-homelab-logo.svg" alt="Firstmate Homelab" width="360" />
+
 # Firstmate Homelab
 
-Firstmate Homelab is a self-hosted development environment for **Firstmate + Herdr + Codex CLI**.
+Self-hosted development environment for **Firstmate + Herdr + Codex CLI**.
 
-It keeps the agent runtime, Git worktrees, GitHub credentials and project Docker workloads on a homelab server while Codex authentication uses your ChatGPT account.
+Keep the agent runtime, Git worktrees, GitHub credentials and project Docker workloads on your homelab, while giving agents an isolated Docker development environment.
+
+[Get started](getting-started/installation.md){ .md-button .md-button--primary }
+[CLI reference](reference/cli.md){ .md-button }
+
+</div>
+
+## How it fits together
 
 ```mermaid
 flowchart LR
@@ -17,17 +28,14 @@ flowchart LR
 
 The important boundary is simple: agents get a real Docker development environment, but they **do not receive the physical homelab Docker socket**. Docker commands from Firstmate target a dedicated Docker-in-Docker daemon.
 
-## Start here
+## Explore the documentation
 
-If you are installing the stack for the first time, go to [Installation](getting-started/installation.md).
-
-For day-to-day use:
-
-- [CLI reference](reference/cli.md) lists the `fmh` commands;
-- [Docker development](guides/docker-development.md) explains how project containers and bind mounts work;
-- [Developer shell](guides/developer-shell.md) documents Fish and the included terminal tooling;
-- [Architecture](concepts/architecture.md) explains the runtime and persistence model;
-- [Security](concepts/security.md) documents the trust boundary and DinD limitations.
+- [Installation](getting-started/installation.md) — install and bootstrap the stack.
+- [Docker development](guides/docker-development.md) — project containers, networking and bind mounts.
+- [Developer shell](guides/developer-shell.md) — Fish and the included terminal tooling.
+- [CLI reference](reference/cli.md) — all `fmh` commands and lifecycle operations.
+- [Architecture](concepts/architecture.md) — runtime, persistence and isolation model.
+- [Security](concepts/security.md) — trust boundary and DinD limitations.
 
 ## Typical workflow
 
