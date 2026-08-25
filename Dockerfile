@@ -1,3 +1,6 @@
+ARG DOCKER_VERSION=29
+FROM docker:${DOCKER_VERSION}-cli AS docker-cli
+
 FROM node:24-bookworm-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -43,6 +46,11 @@ RUN apt-get update \
         vim-tiny \
         zoxide \
     && rm -rf /var/lib/apt/lists/*
+
+# Only the Docker client lives in the agent container. The daemon runs in the
+# dedicated DinD sidecar and the homelab host socket is never mounted.
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins
 
 RUN npm install --global "@openai/codex@${CODEX_VERSION}" \
     && npm cache clean --force

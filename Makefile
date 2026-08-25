@@ -1,4 +1,4 @@
-.PHONY: setup login doctor connect update up down logs
+.PHONY: setup login doctor connect update up down logs docs-install docs-serve docs-build
 
 setup:
 	./scripts/setup.sh
@@ -23,3 +23,12 @@ down:
 
 logs:
 	docker compose logs -f firstmate
+
+docs-install:
+	python -m pip install -r requirements-docs.txt
+
+docs-serve:
+	mkdocs serve
+
+docs-build:
+	mkdocs build --strict

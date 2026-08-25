@@ -23,14 +23,7 @@ else
   docker compose up -d --build
 fi
 
-echo "Installing/updating Herdr in the persistent agent home..."
-docker compose exec -T firstmate bash -lc '
-  set -euo pipefail
-  export PATH="$HOME/.local/bin:$PATH"
-  export HERDR_INSTALL_DIR="$HOME/.local/bin"
-  mkdir -p "$HERDR_INSTALL_DIR"
-  curl -fsSL https://herdr.dev/install.sh | sh
-'
+bash "$ROOT_DIR/scripts/ensure-herdr.sh" --update
 
 echo "Installing any missing Firstmate-managed toolchain dependencies..."
 docker compose exec -T firstmate bash -lc '
