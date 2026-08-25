@@ -13,42 +13,14 @@ The agent-facing tools remain in one long-lived `firstmate` container, while
 project Docker workloads are delegated to a dedicated `docker:dind` service.
 
 ```mermaid
-flowchart TB
-    subgraph HOST["Homelab Docker host"]
-        OUTER["Host Docker Engine\nouter Compose runtime"]
-        INIT["projects-init\none-shot initializer"]
+flowchart LR
+    USER["Developer"] -->|"SSH + fmh"| FM["Firstmate<br/>Herdr + Codex"]
+    FM -->|"Docker over TLS"| DIND["Isolated DinD<br/>Docker daemon"]
+    DIND --> APPS["Project containers"]
 
-        subgraph NS["Shared firstmate / docker network namespace"]
-            FM["firstmate\nnode user\nFish + Herdr + Codex + Docker CLI"]
-            DIND["docker:dind\nprivileged\ndockerd + BuildKit"]
-            INNER["project containers\nnetworks + inner volumes"]
-        end
-
-        HOME[("firstmate-home")]
-        DATA[("dind-data")]
-        CA[("dind-certs-ca")]
-        CLIENT[("dind-certs-client")]
-    end
-
-    OUTER --> INIT
-    OUTER --> FM
-    OUTER --> DIND
-
-    INIT -->|"ensure .firstmate/projects + .treehouse"| HOME
-    HOME -->|"/home/node"| FM
-    HOME -->|"subpath .firstmate/projects"| DIND
-    HOME -->|"subpath .treehouse"| DIND
-
-    DATA -->|"/var/lib/docker"| DIND
-    CA -->|"/certs/ca"| DIND
-    CLIENT -->|"/certs/client"| DIND
-    CLIENT -->|"read-only client certificates"| FM
-
-    FM -->|"Docker API TLS\ntcp://localhost:2376"| DIND
-    DIND --> INNER
-    INNER -->|"published project ports\nlocalhost:<port>"| FM
-
-    SOCK["Host /var/run/docker.sock"] -. "NOT mounted" .-> FM
+    HOME[("firstmate-home<br/>state + projects")] --> FM
+    HOME --> DIND
+    DATA[("dind-data<br/>images + volumes")] --> DIND
 ```
 
 The physical host Docker Engine creates the outer Compose services, but the
