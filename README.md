@@ -8,7 +8,8 @@
 
 The goal is to keep the agent runtime, Git worktrees, GitHub credentials,
 Firstmate state and project Docker workloads on a homelab server while using
-Codex through a ChatGPT login.
+Codex through a ChatGPT login. Project Docker workloads run on a dedicated,
+isolated Docker-in-Docker daemon rather than the physical host Docker daemon.
 
 > Herdr and Firstmate run on your infrastructure. Codex model inference still
 > runs through OpenAI.
@@ -16,32 +17,64 @@ Codex through a ChatGPT login.
 ## Architecture
 
 ```mermaid
-flowchart LR
-    USER["Laptop / desktop"] -->|SSH / Tailscale| HOST["Homelab Docker host"]
-    SHELL["Any host directory"] --> CLI["fmh"]
+flowchart TB
+    USER["Laptop / desktop"] -->|"SSH / Tailscale"| CLI["fmh on homelab host"]
     CLI --> COMPOSE["Docker Compose"]
-    HOST --> COMPOSE
 
-    COMPOSE --> FM["firstmate\nFish + Herdr + Codex"]
-    COMPOSE --> DIND["isolated Docker-in-Docker\ndockerd + BuildKit"]
+    subgraph HOST["Homelab Docker host"]
+        HOSTDOCKER["Host Docker Engine"]
+        INIT["projects-init\none-shot workspace initializer"]
 
-    FM --> HERDR["Herdr / Firstmate crew"]
-    HERDR --> TREEHOUSE["Treehouse worktrees"]
-    FM -->|"Docker CLI over TLS"| DIND
-    DIND --> PROJECTS["project containers\nnetworks + volumes"]
+        subgraph NS["Shared Firstmate / DinD network namespace"]
+            FM["firstmate\nunprivileged node user\nFish + Herdr + Codex + Docker CLI"]
+            DIND["docker:dind\nprivileged\ndockerd + BuildKit"]
+            PROJECTS["project containers\nnetworks + inner volumes"]
+        end
 
-    HOME[("firstmate-home")] --> FM
-    HOME -->|"projects + .treehouse only"| DIND
-    DATA[("dind-data")] --> DIND
+        HOME[("firstmate-home")]
+        DATA[("dind-data")]
+        CA[("dind-certs-ca")]
+        CLIENT[("dind-certs-client")]
+    end
+
+    COMPOSE --> HOSTDOCKER
+    HOSTDOCKER --> INIT
+    HOSTDOCKER --> FM
+    HOSTDOCKER --> DIND
+
+    INIT -->|"create projects + Treehouse paths"| HOME
+    HOME -->|"full /home/node"| FM
+    HOME -->|"only .firstmate/projects"| DIND
+    HOME -->|"only .treehouse"| DIND
+
+    DATA -->|"/var/lib/docker"| DIND
+    CA -->|"/certs/ca"| DIND
+    CLIENT -->|"/certs/client"| DIND
+    CLIENT -->|"read-only client certs"| FM
+
+    FM -->|"Docker API over TLS\nlocalhost:2376"| DIND
+    DIND --> PROJECTS
+    PROJECTS -->|"published ports via localhost"| FM
+
+    HOSTSOCKET["Host /var/run/docker.sock"] -. "NOT mounted" .-> FM
 ```
 
-The physical host Docker socket is deliberately **not** mounted. Agents get a
-real Docker CLI, but it targets a dedicated DinD daemon whose images, containers,
-BuildKit cache and inner volumes are isolated from normal homelab Docker
-workloads.
+The outer Docker Engine only runs the Firstmate Homelab Compose stack. The
+physical host Docker socket is deliberately **not** mounted into `firstmate`, so
+agents cannot address or manipulate the normal homelab Docker daemon directly.
+
+Instead, the Docker CLI available to agents talks over TLS to the dedicated
+`docker:dind` daemon. That inner daemon owns project images, containers, networks,
+BuildKit cache and inner Docker volumes in its own persistent `dind-data` volume.
 
 Firstmate and DinD share one network namespace, so a project that publishes
-`3000:3000` is still reachable by agents at `http://localhost:3000`.
+`3000:3000` is still reachable by agents at `http://localhost:3000` without
+publishing that port on the physical homelab host.
+
+A one-shot `projects-init` service creates the two code-bearing paths before DinD
+starts. DinD receives only `/home/node/.firstmate/projects` and
+`/home/node/.treehouse` from the persistent Firstmate home, at the same absolute
+paths required for normal project-relative bind mounts.
 
 The global `fmh` launcher remembers where the checkout lives, so you can operate
 the stack from **any current directory**. Your caller `pwd` is deliberately not
@@ -96,7 +129,7 @@ instructions for Fish, Zsh, Bash and other common shells.
 2. records the checkout path under `~/.config/firstmate-homelab/`;
 3. installs the global launcher in `~/.local/bin`;
 4. creates `.env` from `.env.example` if needed;
-5. starts the isolated DinD daemon and Firstmate container;
+5. initializes the shared workspace paths, starts the isolated DinD daemon and starts Firstmate;
 6. installs/updates Herdr in the persistent agent home;
 7. asks Firstmate's bootstrap which supported helper tools are missing;
 8. installs the Herdr Codex integration.
@@ -118,6 +151,9 @@ DOCKER_VERSION=29
 FIRSTMATE_REF=main
 CODEX_VERSION=latest
 ```
+
+The DinD container name and persistent volume names can also be overridden in
+`.env`; the defaults are documented in `.env.example`.
 
 ## Daily commands
 
@@ -154,7 +190,9 @@ docker build .
 docker compose up --build
 ```
 
-Those commands **do not** target the physical homelab Docker daemon.
+Those commands **do not** target the physical homelab Docker daemon. The Docker
+client is configured with `DOCKER_HOST=tcp://localhost:2376` and DinD-generated
+TLS client certificates.
 
 Firstmate-managed projects and Treehouse worktrees are exposed to DinD at the
 same absolute paths, so normal project-relative bind mounts work:
@@ -275,6 +313,13 @@ The isolated Docker daemon persists separately in:
 firstmate-homelab-dind-data
 ```
 
+and the DinD TLS material persists in:
+
+```text
+firstmate-homelab-dind-certs-ca
+firstmate-homelab-dind-certs-client
+```
+
 Ask Docker for the real host mountpoints instead of guessing them:
 
 ```bash
@@ -287,9 +332,10 @@ fmh paths
 fmh update
 ```
 
-This refreshes the DinD/runtime images, rebuilds Firstmate and updates persistent
-user-space tooling. Authentication, projects, Treehouse worktrees, DinD images,
-BuildKit cache and inner Docker volumes are kept.
+This pulls the DinD/runtime images, rebuilds the disposable Firstmate image and
+refreshes persistent user-space tooling. Authentication, projects, Treehouse
+worktrees, DinD images, BuildKit cache, inner Docker volumes and TLS material are
+kept.
 
 ## Uninstalling
 
@@ -303,7 +349,7 @@ It removes the runtime containers and global launcher but **keeps all persistent
 Firstmate and DinD volumes**. The repository clone is also kept.
 
 To intentionally delete credentials, project clones, worktrees, project Docker
-containers/volumes, images and build cache as well:
+containers/volumes, images, build cache and DinD TLS material as well:
 
 ```bash
 fmh uninstall --purge
@@ -314,7 +360,8 @@ removal with `fmh uninstall --purge --yes`.
 
 ## Remote use
 
-No Firstmate or project port is automatically exposed on the physical host.
+No Firstmate, Docker API or project port is automatically exposed on the physical
+host.
 
 A normal remote workflow is:
 
