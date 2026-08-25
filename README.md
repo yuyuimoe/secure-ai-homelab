@@ -17,49 +17,17 @@ isolated Docker-in-Docker daemon rather than the physical host Docker daemon.
 ## Architecture
 
 ```mermaid
-flowchart TB
-    USER["Laptop / desktop"] -->|"SSH / Tailscale"| CLI["fmh on homelab host"]
-    CLI --> COMPOSE["Docker Compose"]
+flowchart LR
+    USER["Developer"] -->|"SSH + fmh"| FM["Firstmate<br/>Herdr + Codex"]
+    FM -->|"Docker over TLS"| DIND["Isolated DinD<br/>Docker daemon"]
+    DIND --> APPS["Project containers"]
 
-    subgraph HOST["Homelab Docker host"]
-        HOSTDOCKER["Host Docker Engine"]
-        INIT["projects-init\none-shot workspace initializer"]
-
-        subgraph NS["Shared Firstmate / DinD network namespace"]
-            FM["firstmate\nunprivileged node user\nFish + Herdr + Codex + Docker CLI"]
-            DIND["docker:dind\nprivileged\ndockerd + BuildKit"]
-            PROJECTS["project containers\nnetworks + inner volumes"]
-        end
-
-        HOME[("firstmate-home")]
-        DATA[("dind-data")]
-        CA[("dind-certs-ca")]
-        CLIENT[("dind-certs-client")]
-    end
-
-    COMPOSE --> HOSTDOCKER
-    HOSTDOCKER --> INIT
-    HOSTDOCKER --> FM
-    HOSTDOCKER --> DIND
-
-    INIT -->|"create projects + Treehouse paths"| HOME
-    HOME -->|"full /home/node"| FM
-    HOME -->|"only .firstmate/projects"| DIND
-    HOME -->|"only .treehouse"| DIND
-
-    DATA -->|"/var/lib/docker"| DIND
-    CA -->|"/certs/ca"| DIND
-    CLIENT -->|"/certs/client"| DIND
-    CLIENT -->|"read-only client certs"| FM
-
-    FM -->|"Docker API over TLS\nlocalhost:2376"| DIND
-    DIND --> PROJECTS
-    PROJECTS -->|"published ports via localhost"| FM
-
-    HOSTSOCKET["Host /var/run/docker.sock"] -. "NOT mounted" .-> FM
+    HOME[("firstmate-home<br/>state + projects")] --> FM
+    HOME --> DIND
+    DATA[("dind-data<br/>images + volumes")] --> DIND
 ```
 
-The outer Docker Engine only runs the Firstmate Homelab Compose stack. The
+The homelab Docker Engine only runs the Firstmate Homelab Compose stack. The
 physical host Docker socket is deliberately **not** mounted into `firstmate`, so
 agents cannot address or manipulate the normal homelab Docker daemon directly.
 
