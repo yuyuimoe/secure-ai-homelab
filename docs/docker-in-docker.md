@@ -8,9 +8,10 @@ mounting the homelab host Docker socket.
 ```mermaid
 flowchart TB
     subgraph Host["Homelab Docker host"]
+        OUTER["Host Docker Engine"]
         INIT["projects-init\none-shot"]
 
-        subgraph NS["Shared network namespace"]
+        subgraph NS["Shared Firstmate / DinD network namespace"]
             FM["firstmate\nFish + Herdr + Codex\nDocker CLI"]
             DIND["docker:dind\ndockerd + BuildKit"]
             LOOP["localhost project ports"]
@@ -18,22 +19,31 @@ flowchart TB
 
         HOME[("firstmate-home")]
         DATA[("dind-data")]
-        CERTS[("DinD TLS certs")]
+        CA[("dind-certs-ca")]
+        CLIENT[("dind-certs-client")]
     end
 
-    INIT -->|ensure shared directories| HOME
-    HOME -->|full home| FM
-    HOME -->|only .firstmate/projects| DIND
-    HOME -->|only .treehouse| DIND
-    DATA -->|/var/lib/docker| DIND
-    CERTS --> FM
-    CERTS --> DIND
-    FM -->|TLS Docker API| DIND
+    OUTER --> INIT
+    OUTER --> FM
+    OUTER --> DIND
+    INIT -->|"ensure shared directories"| HOME
+    HOME -->|"full /home/node"| FM
+    HOME -->|"only .firstmate/projects"| DIND
+    HOME -->|"only .treehouse"| DIND
+    DATA -->|"/var/lib/docker"| DIND
+    CA -->|"/certs/ca"| DIND
+    CLIENT -->|"/certs/client"| DIND
+    CLIENT -->|"read-only client certs"| FM
+    FM -->|"TLS Docker API\nlocalhost:2376"| DIND
     DIND --> BUILD["project containers / networks / volumes"]
     BUILD --> LOOP
+    LOOP --> FM
+
+    SOCK["Host /var/run/docker.sock"] -. "NOT mounted" .-> FM
 ```
 
-The host `/var/run/docker.sock` is never mounted.
+The outer host Docker Engine runs the Compose application, but the host
+`/var/run/docker.sock` is never mounted into Firstmate.
 
 The `firstmate` container contains only the Docker client. `dockerd`, BuildKit,
 project images, project containers, project networks and inner Docker volumes all
@@ -88,7 +98,8 @@ That preserves existing project data without copying it to a new volume while
 keeping the Docker daemon away from the normal Codex/GitHub credential paths.
 
 A tiny `projects-init` service ensures the required subdirectories exist before
-Docker starts. Existing projects remain in place.
+Docker starts. This is required by the `volume.subpath` mounts used by the DinD
+service. Existing projects remain in place.
 
 ### Supported bind-mount scope
 
@@ -133,14 +144,21 @@ outer DinD container and preserves the expensive state across rebuilds:
 
 The Docker API uses the TLS support built into the official DinD image.
 
-Firstmate connects to:
+The runtime persists the CA and client material separately:
+
+```text
+firstmate-homelab-dind-certs-ca
+firstmate-homelab-dind-certs-client
+```
+
+DinD mounts both certificate paths it needs. Firstmate receives only the client
+certificate volume, mounted read-only, and connects to:
 
 ```text
 tcp://localhost:2376
 ```
 
-with the generated client certificates mounted read-only into the agent
-container. The API is not published as a host port.
+The Docker API is not published as a host port.
 
 ## Performance expectations
 
@@ -240,7 +258,7 @@ A full purge deletes:
 
 - `firstmate-home`;
 - DinD `/var/lib/docker` data;
-- DinD TLS certificate volumes.
+- DinD TLS CA and client certificate volumes.
 
 ```bash
 fmh uninstall --purge
