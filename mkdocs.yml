@@ -15,6 +15,7 @@ nav:
   - Reference:
       - CLI: reference/cli.md
       - Configuration: reference/configuration.md
+      - Documentation deployment: reference/deployment.md
   - Concepts:
       - Architecture: concepts/architecture.md
       - Security: concepts/security.md
