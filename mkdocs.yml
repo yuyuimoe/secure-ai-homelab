@@ -1,0 +1,44 @@
+site_name: Firstmate Homelab
+site_description: Self-hosted Firstmate + Herdr + Codex development environment
+site_url: https://sangimed.github.io/firstmate-homelab/
+repo_name: sangimed/firstmate-homelab
+repo_url: https://github.com/sangimed/firstmate-homelab
+edit_uri: edit/main/docs/
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Installation: getting-started/installation.md
+  - Guides:
+      - Docker development: guides/docker-development.md
+      - Developer shell: guides/developer-shell.md
+  - Reference:
+      - CLI: reference/cli.md
+      - Configuration: reference/configuration.md
+  - Concepts:
+      - Architecture: concepts/architecture.md
+      - Security: concepts/security.md
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.instant
+    - content.code.copy
+  palette:
+    scheme: slate
+    primary: black
+    accent: green
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
