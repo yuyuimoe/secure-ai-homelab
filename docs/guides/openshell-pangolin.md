@@ -106,9 +106,15 @@ On the VPS checkout:
 ```bash
 ./scripts/install-rauthy.sh
 $EDITOR ~/.config/secure-ai-homelab/rauthy.env   # paste ENC_KEYS + HQL secrets
-systemctl --user enable --now rauthy.service
+systemctl --user start rauthy.service
 podman logs -f rauthy        # copy the generated admin password (shown once)
 ```
+
+!!! note "Quadlets cannot be enabled"
+    Do not run `systemctl --user enable rauthy.service`. The unit is generated
+    under `/run/user/<uid>/systemd/generator/`, and systemd rejects enabling a
+    generated unit. The quadlet's `[Install] WantedBy=default.target` makes the
+    generator enable it at `daemon-reload`, so `start` is all you need.
 
 The unit (`deploy/rauthy/rauthy.container`) runs Rauthy on plain HTTP port `8080`,
 bound to loopback, with `proxy_mode = true`. Rauthy's own TLS stays off because

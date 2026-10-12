@@ -79,8 +79,11 @@ EOF
 
 systemctl --user daemon-reload
 
+# Quadlets cannot be `systemctl enable`d: the Podman generator creates them
+# under /run/user/<uid>/systemd/generator/ and applies each unit's [Install]
+# section on daemon-reload. Just start them here.
 for unit in init.service pinp.service vibepod.service ai-memory.service vibepod-pod.service; do
-  systemctl --user enable --now "$unit"
+  systemctl --user start "$unit"
 done
 
 # Install the `vph` launcher.

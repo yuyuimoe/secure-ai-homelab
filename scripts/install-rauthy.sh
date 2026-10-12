@@ -37,7 +37,7 @@ Rauthy quadlets installed into $SYSTEMD_DIR and $ENV_FILE.
 
 Next:
   1. edit $ENV_FILE   (PUB_URL, ENC_KEYS, HQL secrets, admin email)
-  2. systemctl --user enable --now rauthy.service
+  2. systemctl --user start rauthy.service    # [Install] enables it at boot
   3. podman logs -f rauthy      # copy the generated admin password (once)
   4. expose auth.<domain> in Pangolin -> localhost:8080
 
