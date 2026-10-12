@@ -72,6 +72,7 @@ else
       ENC_KEYS="$(get ENC_KEYS)"
       ENC_KEY_ACTIVE="$(get ENC_KEY_ACTIVE)"
       TRUSTED_PROXIES="$(get TRUSTED_PROXIES)"
+      RFC_8252_ENABLE="$(get RFC_8252_ENABLE)"
       HQL_LISTEN_ADDR_API="$(get HQL_LISTEN_ADDR_API)"
       HQL_LISTEN_ADDR_RAFT="$(get HQL_LISTEN_ADDR_RAFT)"
       HQL_NODES="$(get HQL_NODES)"
@@ -90,6 +91,8 @@ else
         && pass "ENC_KEY_ACTIVE matches ENC_KEYS key id" || fail "ENC_KEY_ACTIVE mismatch"
       [[ ${TRUSTED_PROXIES:-} == "127.0.0.1/32" ]] \
         && pass "TRUSTED_PROXIES set for host networking" || fail "TRUSTED_PROXIES wrong"
+      [[ ${RFC_8252_ENABLE:-} == "true" ]] \
+        && pass "RFC_8252_ENABLE set (loopback redirects match any port)" || fail "RFC_8252_ENABLE not true"
       [[ ${HQL_LISTEN_ADDR_API:-} == "127.0.0.1" && ${HQL_LISTEN_ADDR_RAFT:-} == "127.0.0.1" ]] \
         && pass "Hiqlite listeners bound to loopback" || fail "Hiqlite listeners not loopback"
       [[ ${HQL_NODES:-} == "1 localhost:8100 localhost:8200" ]] \

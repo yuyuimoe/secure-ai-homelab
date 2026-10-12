@@ -173,14 +173,20 @@ Still in the admin UI, under **Clients**, create a client:
 |---|---|
 | Client id | `openshell-cli` |
 | Confidential | No (public client, PKCE) |
-| Redirect URIs | `http://127.0.0.1:*/callback` |
+| Redirect URIs | `http://127.0.0.1/callback` |
 | Scopes | `openid profile email roles` |
 
-!!! note "Why the wildcard redirect"
+!!! note "Why there is no port"
     The OpenShell CLI binds an **ephemeral** loopback port on every login
     (`TcpListener::bind("127.0.0.1:0")`), so the redirect is
-    `http://127.0.0.1:<random>/callback`. The `*` covers the port. Rauthy allows
-    wildcard redirect URIs, but verify the match after creating the client.
+    `http://127.0.0.1:<random>/callback`. Register the **port-less** form and keep
+    `RFC_8252_ENABLE=true` in `rauthy.env` (the installer sets it): Rauthy then
+    matches a loopback redirect on any port (RFC 8252 §7.3).
+
+    Do **not** use `http://127.0.0.1:*/callback` — Rauthy parses the redirect as a
+    real URL and rejects the `*` with "Invalid URI". I verified both directions on
+    Rauthy 0.37.1: `RFC_8252_ENABLE=true` accepts an ephemeral port, and `false`
+    returns `400 Invalid redirect uri`.
 
 The client id `openshell-cli` is deliberate: Rauthy sets the access token
 audience to the client id, which matches OpenShell's default audience.
@@ -346,7 +352,7 @@ local PKI, or by minting short-lived certificates. Track serial numbers with
 | Symptom | Cause | Fix |
 |---|---|---|
 | `x509: certificate is valid for ...` on connect | Alias missing from the server certificate | Add `<alias>` to `server_sans`, restart, re-enroll bundles |
-| Login redirect fails | Redirect URI not registered | Register `http://127.0.0.1:*/callback` on the `openshell-cli` client |
+| Login redirect fails | Redirect URI not registered | Register `http://127.0.0.1/callback` (port-less) with `RFC_8252_ENABLE=true` |
 | `Authentication: Failed` / browser opens but no roles | Roles claim empty | Confirm `roles_claim = "roles"` and that the user has `openshell-admin` or `openshell-user` |
 | Gateway cannot reach the IdP | Issuer not HTTPS or not reachable from the VPS | `curl https://<idp>/auth/v1/.well-known/openid-configuration` from the VPS |
 | Everyone loses access after a SAN change | Local PKI regenerated | Re-copy the new client bundle / re-run `gateway add` |
