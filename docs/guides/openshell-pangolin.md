@@ -444,11 +444,21 @@ openshell sandbox delete smoke
     with `invalid peer certificate: UnknownIssuer`.
 
     Copy the gateway's `~/.local/state/openshell/tls/ca.crt` to each client and
-    trust it:
+    trust it (pick your distro's tool):
 
     ```bash
+    # Debian / Ubuntu
     sudo cp openshell-ca.crt /usr/local/share/ca-certificates/openshell-gateway.crt
     sudo update-ca-certificates
+
+    # Arch Linux (p11-kit): no update-ca-certificates; drop an anchor and rebuild
+    sudo install -m 0644 openshell-ca.crt /etc/ca-certificates/trust-source/anchors/openshell-gateway.crt
+    sudo update-ca-trust
+    # equivalent: sudo trust anchor --store openshell-ca.crt && sudo update-ca-trust
+
+    # Fedora / RHEL
+    sudo cp openshell-ca.crt /etc/pki/ca-trust/source/anchors/openshell-gateway.crt
+    sudo update-ca-trust
     ```
 
     Without root, point the CLI at a bundle that also contains the system CAs
