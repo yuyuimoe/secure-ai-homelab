@@ -1,5 +1,8 @@
 # Developer shell
 
+!!! note "Previous approach"
+    This page documents the earlier VibePod Homelab stack. The recommended path is [OpenShell over Pangolin](openshell-pangolin.md).
+
 The control plane keeps a curated terminal environment on top of a Wolfi base. It is *not* a full desktop distribution — it is a comfortable, predictable environment for long sessions.
 
 ## Open the shell

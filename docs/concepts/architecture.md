@@ -1,5 +1,8 @@
 # Architecture
 
+!!! note "Previous approach"
+    This page documents the earlier VibePod Homelab stack. The recommended path is [OpenShell over Pangolin](../guides/openshell-pangolin.md).
+
 VibePod Homelab packages the VibePod agent runner together with an isolated Podman-in-Podman (PinP) runtime for agent and project containers.
 
 ## Runtime model

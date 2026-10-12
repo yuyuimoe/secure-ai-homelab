@@ -1,75 +1,72 @@
 <p align="center">
-  <img src="assets/firstmate-homelab-logo.svg" alt="VibePod Homelab" width="520" />
+  <img src="assets/secure-ai-homelab-logo.svg" alt="Secure AI Homelab" width="520" />
 </p>
 
 <p align="center">
-  Self-hosted <strong>VibePod</strong> agent platform with <strong>Pi-Bolt</strong>, <strong>Claude Code</strong> and <strong>ZCode</strong>, running in a rootless <strong>Podman-in-Podman</strong> (PinP) pod.
+  Recipes for self-hosting AI coding agents with real isolation — starting with
+  <strong>NVIDIA OpenShell</strong> behind <strong>Pangolin</strong>'s zero-trust VPN, with
+  <strong>Rauthy</strong> as the OIDC identity provider.
 </p>
 
-VibePod Homelab keeps the agent runner, credentials, memory and project workspaces on a homelab server. Agents run in containers managed by [VibePod](https://vibepod.dev), spawned into an isolated inner Podman — **PinP**, the Podman equivalent of Docker-in-Docker — instead of touching the host Docker/Podman socket.
+Secure AI Homelab collects ways to run autonomous coding agents on your own
+server without handing them your machine. The recommended path is a shared
+**OpenShell** gateway reachable only over a private VPN, where each person gets
+their own sandbox, agents are untrusted by default, and credentials never enter
+the sandbox.
 
-> Everything runs **rootless** (Podman + systemd user units, pasta networking). No daemon, no Docker, no root.
-
-## Architecture
+## Recommended: OpenShell over Pangolin
 
 ```mermaid
 flowchart LR
-    DEV["Developer"] -->|"SSH + vph"| VP["vibepod<br/>VibePod CLI + Herdr + Fish"]
-    VP -->|"podman socket"| PINP["pinp<br/>Podman-in-Podman"]
-    PINP --> AGENTS["agent containers<br/>Pi-Bolt · Claude Code · ZCode"]
-    MEM[("ai-memory<br/>shared long-term memory")] --> AGENTS
-    CFG[("vibepod-config<br/>credentials + profiles")] --> VP
-    CFG --> PINP
-    DATA[("pinp-data<br/>images + containers")] --> PINP
+    CLI["openshell CLI<br/>(user machine)"] --> VPN["Pangolin client VPN"]
+    VPN --> PS["Pangolin server"]
+    PS --> NEWT["Newt site connector<br/>(VPS host)"]
+    NEWT --> GW["OpenShell gateway<br/>127.0.0.1:17670"]
+    GW --> SBX["sandboxes"]
+    BROWSER["user browser"] --> IDP["Rauthy<br/>auth.yuyui.moe"]
+    GW -. "JWKS" .-> IDP
 ```
 
-- **`vibepod`** — the control plane: VibePod CLI (`vp`), Herdr (multiplexer), the Fish developer shell, the podman client, and the ai-memory CLI.
-- **`pinp`** — Podman-in-Podman: the inner podman daemon VibePod targets. Agents (and any project containers they build) run here.
-- **`ai-memory`** — a long-term memory server shared by every agent across sessions.
+- **OpenShell** — kernel-enforced sandboxes (Landlock, seccomp) with
+  deny-by-default network policy and gateway-held credentials.
+- **Pangolin** — zero-trust connectivity. The gateway is a *private* resource,
+  reachable only through the built-in VPN; nothing but the IdP is public.
+- **Rauthy** — one lightweight OIDC provider for both Pangolin and OpenShell.
+  One account, one login.
 
-The important boundary is unchanged from the old DinD design: agents get a real container runtime, but **not the host's socket**.
+**Full recipe:** [OpenShell over Pangolin](docs/guides/openshell-pangolin.md).
 
-## Quick start
+Before you start, check the host can actually run OpenShell:
 
 ```bash
-git clone https://github.com/<you>/vibepod-homelab.git
-cd vibepod-homelab
-./scripts/install.sh   # deploy rootless quadlets + build control plane + PinP
-
-vph setup              # build the Pi-Bolt image into PinP + wire ai-memory
-vph login              # authenticate agents + GitHub CLI
-vph doctor             # verify the stack
-vph connect            # open a Herdr multiplexer session
+./scripts/check-openshell-host.sh --probe --container
 ```
 
-Inside a Herdr pane, run an agent:
+## Layout
 
-```bash
-vp run pi        # Pi-Bolt (default)
-vp run claude    # Claude Code
-vp run zcode     # ZCode
-```
+| Path | What it is |
+|---|---|
+| `docs/guides/openshell-pangolin.md` | The recommended recipe, end to end |
+| `deploy/rauthy/` | Rauthy OIDC container (compose + env template) |
+| `scripts/check-openshell-host.sh` | OpenShell kernel preflight |
+| `scripts/openshell-user-cert.sh` | Mint break-glass mTLS client certificates |
+| `scripts/`, `systemd/`, `docker/`, `Containerfile` | The earlier VibePod Homelab stack |
+| `docs/` | Documentation (MkDocs Material) |
 
-## Images
+## Previous approach: VibePod Homelab
 
-| Image | File | Base | Purpose |
-|-------|------|------|---------|
-| control plane | `Containerfile` | `ghcr.io/gitguardian/wolfi/bun` | `vp` + Herdr + Fish + toolbox + podman client + ai-memory CLI |
-| PinP | `docker/pinp/Containerfile` | `quay.io/podman/stable` | inner podman daemon (vfs storage) |
-| Pi agent | `docker/pi/Containerfile` | `ghcr.io/gitguardian/wolfi/bun` | Pi-Bolt (aliased `pi`) + Claude Code + ZCode |
-| ai-memory | `docker/ai-memory/Containerfile` | `chainguard/wolfi-base` | long-term memory server (upstream release binary + hooks) |
+The earlier stack runs **VibePod** agents in a rootless Podman-in-Podman pod with
+a shared memory server. It is a single trust domain — appropriate for **one
+trusted operator**, not for sharing with other people. It is kept here for
+reference.
 
-Wolfi is **glibc + apk** — small like Alpine but able to run native binaries (`pi-bolt`, Claude Code), which musl cannot.
+- [VibePod Homelab installation](docs/getting-started/installation.md)
+- [Architecture](docs/concepts/architecture.md)
+- [Security](docs/concepts/security.md)
 
 ## Documentation
 
-Full documentation lives under [`docs/`](docs/index.md) (MkDocs Material). Key pages:
-
-- [Architecture](docs/concepts/architecture.md) — pod topology, PinP, persistence, networking.
-- [Security](docs/concepts/security.md) — trust boundary and PinP limitations.
-- [Deployment](docs/reference/deployment.md) — rootless prerequisites, quadlets, subuid/subgid, pasta, ai-memory + VibePod board wiring.
-
-Run locally:
+Run the docs locally:
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -79,9 +76,8 @@ make docs-serve
 
 ## Upstream projects
 
+- [NVIDIA OpenShell](https://docs.nvidia.com/openshell/latest/) — safe runtime for autonomous agents.
+- [Pangolin](https://pangolin.net) — open-source zero-trust networking platform.
+- [Rauthy](https://sebadob.github.io/rauthy/) — lightweight OIDC identity provider.
 - [VibePod](https://vibepod.dev) — one CLI for all AI coding agents, in containers.
-- [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt) — Pi, compiled ahead of time to native code.
-- [Pi](https://github.com/earendil-works/pi) — the coding agent.
-- [Herdr](https://herdr.dev) — terminal multiplexer for coding agents.
 - [ai-memory](https://github.com/akitaonrails/ai-memory) — long-term memory for coding agents.
-- [vibepod-board](https://github.com/VibePod/vibepod-board) — task board for agent automation.

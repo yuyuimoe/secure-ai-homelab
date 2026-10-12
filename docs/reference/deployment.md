@@ -1,5 +1,8 @@
 # Deployment
 
+!!! note "Previous approach"
+    This page documents the earlier VibePod Homelab stack. The recommended path is [OpenShell over Pangolin](../guides/openshell-pangolin.md).
+
 VibePod Homelab deploys as **rootless Podman quadlets** — systemd user units generated from `.pod`, `.container` and `.volume` files. No root, no Docker, no daemon.
 
 ## Prerequisites

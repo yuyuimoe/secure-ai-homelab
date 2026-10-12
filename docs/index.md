@@ -1,55 +1,57 @@
 <div align="center" markdown>
 
-<img src="assets/firstmate-homelab-logo.svg" alt="VibePod Homelab" width="360" />
+<img src="assets/secure-ai-homelab-logo.svg" alt="Secure AI Homelab" width="360" />
 
-# VibePod Homelab
+# Secure AI Homelab
 
-Self-hosted **VibePod** agent platform running **Pi-Bolt**, **Claude Code** and **ZCode** in a rootless Podman-in-Podman pod.
+Recipes for self-hosting AI coding agents with real isolation — OpenShell behind
+Pangolin's zero-trust VPN, with Rauthy as the OIDC identity provider.
 
-[Get started](getting-started/installation.md){ .md-button .md-button--primary }
-[Architecture](concepts/architecture.md){ .md-button }
-[Deployment](reference/deployment.md){ .md-button }
+[OpenShell + Pangolin recipe](guides/openshell-pangolin.md){ .md-button .md-button--primary }
+[VibePod Homelab (previous)](getting-started/installation.md){ .md-button }
 
 </div>
 
-## How it fits together
+## Recommended: OpenShell over Pangolin
 
 ```mermaid
 flowchart LR
-    DEV[Developer] -->|SSH + vph| VP[vibepod<br/>VibePod CLI + Herdr + Fish]
-    VP -->|podman socket| PINP[pinp<br/>Podman-in-Podman]
-    PINP --> AGENTS[agent containers<br/>Pi-Bolt · Claude Code · ZCode]
-    MEM[(ai-memory)] --> AGENTS
+    CLI["openshell CLI"] --> VPN["Pangolin client VPN"]
+    VPN --> PS["Pangolin server"]
+    PS --> NEWT["Newt (VPS)"]
+    NEWT --> GW["OpenShell gateway<br/>127.0.0.1:17670"]
+    GW --> SBX["sandboxes"]
+    BROWSER["browser"] --> IDP["Rauthy"]
+    GW -. "JWKS" .-> IDP
 ```
 
-The boundary is simple: agents get a real container runtime, but **not the host Podman/Docker socket**. VibePod (`vp`) manages the agents; the inner Podman (**PinP**) is the only runtime they can see.
+Each person reaches a shared OpenShell gateway through the Pangolin VPN. OpenShell
+runs each agent in a kernel-enforced sandbox with deny-by-default network policy,
+so a shared gateway stays safe even when agents are untrusted. Rauthy provides
+the OIDC login, and one account signs into both Pangolin and OpenShell.
+
+**Start here:** [OpenShell over Pangolin](guides/openshell-pangolin.md).
 
 ## Explore the documentation
 
-- [Installation](getting-started/installation.md) — deploy the rootless quadlets and bootstrap.
-- [Architecture](concepts/architecture.md) — pod topology, PinP, persistence, networking.
-- [Security](concepts/security.md) — trust boundary and PinP limitations.
-- [PinP development](guides/pinp-development.md) — building and running project containers.
-- [Developer shell](guides/developer-shell.md) — Fish and the included tooling.
-- [CLI reference](reference/cli.md) — every `vph` command.
-- [Deployment](reference/deployment.md) — rootless prerequisites, subuid/subgid, pasta, ai-memory and board wiring.
+- [OpenShell + Pangolin recipe](guides/openshell-pangolin.md) — the recommended, end-to-end path.
+- [VibePod Homelab installation](getting-started/installation.md) — the previous single-operator stack.
+- [VibePod architecture](concepts/architecture.md) — pod topology, PinP, persistence.
+- [VibePod security](concepts/security.md) — its trust boundary and limitations.
+- [Deployment reference](reference/deployment.md) — rootless prerequisites and quadlets.
 
-## Typical workflow
+## Verify the host
 
-```bash
-ssh homelab
-vph connect          # Herdr multiplexer
-```
-
-Inside a pane:
+OpenShell needs Linux 6.2+, Landlock, and nested seccomp user notifications.
+Check before deploying:
 
 ```bash
-vp run pi            # Pi-Bolt — the default agent
+./scripts/check-openshell-host.sh --probe --container
 ```
 
-Docker-style work inside an agent targets PinP, never the host runtime:
+## Previous approach: VibePod Homelab
 
-```bash
-podman build .
-podman run --rm ...
-```
+VibePod Homelab keeps the agent runner, credentials, memory and project
+workspaces in one rootless Podman-in-Podman pod. It is a single trust domain,
+suitable for one operator. Its pages are kept for reference and are marked
+"previous approach".

@@ -1,29 +1,28 @@
-site_name: VibePod Homelab
-site_description: Self-hosted VibePod agent platform with Pi-Bolt, Claude Code and ZCode on rootless Podman
-site_url: https://sangimed.github.io/firstmate-homelab/
-repo_name: sangimed/firstmate-homelab
-repo_url: https://github.com/sangimed/firstmate-homelab
+site_name: Secure AI Homelab
+site_description: Self-hosted secure AI agent homelab — OpenShell over Pangolin with Rauthy OIDC, plus the earlier VibePod Homelab stack
+site_url: https://yuyuimoe.github.io/secure-ai-homelab/
+repo_name: yuyuimoe/secure-ai-homelab
+repo_url: https://github.com/yuyuimoe/secure-ai-homelab
 edit_uri: edit/main/docs/
 
 nav:
   - Home: index.md
-  - Getting started:
+  - OpenShell + Pangolin:
+      - Recipe: guides/openshell-pangolin.md
+  - VibePod Homelab (previous):
       - Installation: getting-started/installation.md
-  - Guides:
-      - PinP development: guides/pinp-development.md
-      - Developer shell: guides/developer-shell.md
-  - Reference:
-      - CLI: reference/cli.md
-      - Configuration: reference/configuration.md
-      - Deployment: reference/deployment.md
-  - Concepts:
       - Architecture: concepts/architecture.md
       - Security: concepts/security.md
+      - PinP development: guides/pinp-development.md
+      - Developer shell: guides/developer-shell.md
+      - CLI reference: reference/cli.md
+      - Configuration: reference/configuration.md
+      - Deployment: reference/deployment.md
 
 theme:
   name: material
-  logo: assets/firstmate-homelab-logo.svg
-  favicon: assets/firstmate-homelab-logo.svg
+  logo: assets/secure-ai-homelab-logo.svg
+  favicon: assets/secure-ai-homelab-logo.svg
   features:
     - navigation.sections
     - navigation.instant

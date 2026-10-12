@@ -1,5 +1,8 @@
 # Installation
 
+!!! note "Previous approach"
+    This page documents the earlier VibePod Homelab stack. The recommended path is [OpenShell over Pangolin](../guides/openshell-pangolin.md).
+
 Deploy VibePod Homelab as rootless Podman quadlets (systemd user units).
 
 ## Requirements
@@ -11,8 +14,8 @@ Deploy VibePod Homelab as rootless Podman quadlets (systemd user units).
 ## Install
 
 ```bash
-git clone https://github.com/<you>/vibepod-homelab.git
-cd vibepod-homelab
+git clone https://github.com/<you>/secure-ai-homelab.git
+cd secure-ai-homelab
 
 cp .env.example .env      # edit GIT_USER_NAME/EMAIL, AI_MEMORY_*, pins
 ./scripts/install.sh

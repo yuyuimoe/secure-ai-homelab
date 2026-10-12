@@ -1,5 +1,8 @@
 # PinP development
 
+!!! note "Previous approach"
+    This page documents the earlier VibePod Homelab stack. The recommended path is [OpenShell over Pangolin](openshell-pangolin.md).
+
 Agents and their project containers run on **PinP** — the isolated inner Podman — not the host runtime.
 
 ## How it works

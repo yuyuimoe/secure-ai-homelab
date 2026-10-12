@@ -1,5 +1,8 @@
 # CLI reference
 
+!!! note "Previous approach"
+    This page documents the earlier VibePod Homelab stack. The recommended path is [OpenShell over Pangolin](../guides/openshell-pangolin.md).
+
 `vph` is the global launcher. It works from any directory and targets the rootless Podman pod, never the host container socket.
 
 ## Commands

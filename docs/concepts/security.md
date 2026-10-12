@@ -1,5 +1,8 @@
 # Security
 
+!!! note "Previous approach"
+    This page documents the earlier VibePod Homelab stack. The recommended path is [OpenShell over Pangolin](../guides/openshell-pangolin.md).
+
 VibePod Homelab runs autonomous coding agents with shell, GitHub and container capabilities. Treat it as a powerful development workstation, not as an untrusted sandbox.
 
 ## Current protections

@@ -1,5 +1,8 @@
 # Configuration
 
+!!! note "Previous approach"
+    This page documents the earlier VibePod Homelab stack. The recommended path is [OpenShell over Pangolin](../guides/openshell-pangolin.md).
+
 Configuration is split across the environment template (`.env`), the VibePod config (`~/.config/vibepod/config.yaml`), and the quadlet units.
 
 `scripts/install.sh`, `scripts/update.sh` and `scripts/setup.sh` source `.env` (via `set -a`), so it must be valid shell syntax — quote values containing spaces. The upstream pins are passed to `podman build --build-arg`; the `AI_MEMORY_*` settings are written to `~/.config/vibepod-homelab/ai-memory.env`, which the ai-memory quadlet reads with `EnvironmentFile=`. Re-run `vph update` after editing `.env` to rebuild images and refresh that file.
