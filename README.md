@@ -47,7 +47,7 @@ Before you start, check the host can actually run OpenShell:
 | Path | What it is |
 |---|---|
 | `docs/guides/openshell-pangolin.md` | The recommended recipe, end to end |
-| `deploy/rauthy/` | Rauthy OIDC container (compose + env template) |
+| `deploy/rauthy/` | Rauthy OIDC quadlets + env template |
 | `scripts/check-openshell-host.sh` | OpenShell kernel preflight |
 | `scripts/openshell-user-cert.sh` | Mint break-glass mTLS client certificates |
 | `scripts/`, `systemd/`, `docker/`, `Containerfile` | The earlier VibePod Homelab stack |

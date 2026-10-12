@@ -98,23 +98,22 @@ openssl rand -base64 48
 openssl rand -base64 48
 ```
 
-### 1.2 Deploy Rauthy
+### 1.2 Deploy Rauthy (quadlets)
 
-Copy `deploy/rauthy/` from this repo to the VPS and fill in the values:
+Rauthy runs as a rootless Podman quadlet, like the rest of this repo — no compose.
+On the VPS checkout:
 
 ```bash
-scp -r deploy/rauthy <vps>:~/secure-ai-homelab-rauthy
-ssh <vps>
-cd ~/secure-ai-homelab-rauthy
-cp config.toml.example config.toml
-$EDITOR config.toml          # paste ENC_KEYS, HQL secrets, admin email
-podman compose up -d
+./scripts/install-rauthy.sh
+$EDITOR ~/.config/secure-ai-homelab/rauthy.env   # paste ENC_KEYS + HQL secrets
+systemctl --user enable --now rauthy.service
 podman logs -f rauthy        # copy the generated admin password (shown once)
 ```
 
-The compose file runs Rauthy on plain HTTP port `8080` behind a reverse proxy
-(`proxy_mode = true`). Rauthy's own TLS is disabled because Pangolin terminates
-TLS at `https://<idp>`.
+The unit (`deploy/rauthy/rauthy.container`) runs Rauthy on plain HTTP port `8080`,
+bound to loopback, with `proxy_mode = true`. Rauthy's own TLS stays off because
+Pangolin terminates TLS at `https://<idp>`. The embedded database and generated
+signing keys live in the `rauthy-data` volume.
 
 ### 1.3 Expose Rauthy through Pangolin
 
@@ -319,7 +318,7 @@ local PKI, or by minting short-lived certificates. Track serial numbers with
   through Pangolin.
 - Prefer per-user certificates or OIDC. A shared client bundle has no revocable
   identity.
-- Pin the Rauthy image tag (`deploy/rauthy/compose.yaml`) and review updates.
+- Pin the Rauthy image tag (`deploy/rauthy/rauthy.container`) and review updates.
 - See [Security](../concepts/security.md) for the general model.
 
 ## Previous approach: VibePod Homelab

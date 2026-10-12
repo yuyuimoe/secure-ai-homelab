@@ -1,0 +1,28 @@
+# Rauthy — OIDC identity provider for OpenShell and Pangolin.
+#
+# Rootless Podman quadlet. Install with scripts/install-rauthy.sh (copies this
+# and rauthy-data.volume into ~/.config/containers/systemd/), then:
+#
+#   $EDITOR ~/.config/secure-ai-homelab/rauthy.env   # secrets + domains
+#   systemctl --user enable --now rauthy.service
+#
+# Runtime settings are read from the env file via EnvironmentFile= (the same
+# idiom as the ai-memory unit). See docs/guides/openshell-pangolin.md.
+
+[Container]
+Image=ghcr.io/sebadob/rauthy:0.37.1
+ContainerName=rauthy
+
+# Loopback only: the host-level Newt connector forwards auth.<domain> here.
+PublishPort=127.0.0.1:8080:8080
+
+# Embedded database and generated JWKS/JWT signing keys. Back this up.
+Volume=rauthy-data.volume:/app/data
+
+EnvironmentFile=%h/.config/secure-ai-homelab/rauthy.env
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

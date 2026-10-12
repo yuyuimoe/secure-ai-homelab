@@ -1,0 +1,7 @@
+# Rauthy data: embedded database plus generated JWKS/JWT signing keys (/app/data).
+# Losing this invalidates all sessions and client secrets.
+
+[Volume]
+
+[Install]
+WantedBy=default.target
