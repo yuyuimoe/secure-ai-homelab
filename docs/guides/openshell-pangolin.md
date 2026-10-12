@@ -85,18 +85,19 @@ Rauthy is a single ~40 MB Rust container with an embedded database. It must be
 and JWKS, and so each user's browser can reach the login page. The OpenShell
 gateway itself stays private.
 
-### 1.1 Generate secrets
+### 1.1 Secrets
 
-On the VPS:
+`scripts/install-rauthy.sh` generates the encryption key, the active key id and
+the two Hiqlite secrets when it writes the env file. To do it by hand:
 
 ```bash
-# 32-byte base64 encryption key, prefixed with a short key id
-printf '%s/%s\n' "$(openssl rand -hex 4)" "$(openssl rand -base64 32)"
-
-# Two independent Hiqlite secrets
-openssl rand -base64 48
-openssl rand -base64 48
+key_id=$(openssl rand -hex 4); key=$(openssl rand -base64 32)
+printf 'ENC_KEYS=%s/%s\nENC_KEY_ACTIVE=%s\n' "$key_id" "$key" "$key_id"
+printf 'HQL_SECRET_RAFT=%s\n' "$(openssl rand -base64 48)"
+printf 'HQL_SECRET_API=%s\n'  "$(openssl rand -base64 48)"
 ```
+
+Rauthy refuses to start without **both** `ENC_KEYS` and `ENC_KEY_ACTIVE`.
 
 ### 1.2 Deploy Rauthy (quadlets)
 
@@ -104,8 +105,8 @@ Rauthy runs as a rootless Podman quadlet, like the rest of this repo — no comp
 On the VPS checkout:
 
 ```bash
-./scripts/install-rauthy.sh
-$EDITOR ~/.config/secure-ai-homelab/rauthy.env   # paste ENC_KEYS + HQL secrets
+./scripts/install-rauthy.sh        # copies quadlets, generates secrets
+$EDITOR ~/.config/secure-ai-homelab/rauthy.env   # set PUB_URL + admin email
 systemctl --user start rauthy.service
 podman logs -f rauthy        # copy the generated admin password (shown once)
 ```

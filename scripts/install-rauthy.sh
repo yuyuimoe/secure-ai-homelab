@@ -25,8 +25,20 @@ cp "$ROOT_DIR"/deploy/rauthy/rauthy.container "$ROOT_DIR"/deploy/rauthy/rauthy-d
 if [[ -f $ENV_FILE ]]; then
   echo "Keeping existing $ENV_FILE"
 else
-  install -m 0600 "$ROOT_DIR/deploy/rauthy/rauthy.env.example" "$ENV_FILE"
-  echo "Wrote $ENV_FILE (mode 600)."
+  command -v openssl >/dev/null 2>&1 || { echo "openssl is required to generate secrets." >&2; exit 1; }
+  key_id="$(openssl rand -hex 4)"
+  enc_key="$(openssl rand -base64 32)"
+  raft="$(openssl rand -base64 48)"
+  api="$(openssl rand -base64 48)"
+  # Replace the placeholders in the template with generated values. Rauthy needs
+  # both ENC_KEYS and ENC_KEY_ACTIVE, so generate both together.
+  sed -e "s|<key-id>/<base64-32-bytes>|$key_id/$enc_key|" \
+      -e "s|<key-id>|$key_id|" \
+      -e "s|<raft-secret>|$raft|" \
+      -e "s|<api-secret>|$api|" \
+      "$ROOT_DIR/deploy/rauthy/rauthy.env.example" >"$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+  echo "Wrote $ENV_FILE with generated secrets (mode 600)."
 fi
 
 systemctl --user daemon-reload
@@ -36,7 +48,7 @@ cat <<EOF
 Rauthy quadlets installed into $SYSTEMD_DIR and $ENV_FILE.
 
 Next:
-  1. edit $ENV_FILE   (PUB_URL, ENC_KEYS, HQL secrets, admin email)
+  1. edit $ENV_FILE   (PUB_URL + admin email; secrets already generated)
   2. systemctl --user start rauthy.service    # [Install] enables it at boot
   3. podman logs -f rauthy      # copy the generated admin password (once)
   4. expose auth.<domain> in Pangolin -> localhost:8080
