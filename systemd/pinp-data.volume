@@ -1,0 +1,7 @@
+# PinP storage: the inner podman's images, containers and build cache
+# (mounted at /var/lib/containers inside the pinp container).
+
+[Volume]
+
+[Install]
+WantedBy=default.target

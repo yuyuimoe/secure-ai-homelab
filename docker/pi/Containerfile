@@ -1,0 +1,65 @@
+# VibePod Homelab — Pi agent image (what `vp run pi` launches).
+#
+# Descends from VibePod's own `pi` agent (vibepod-agents/docker/pi), upgraded:
+#   * base  node:22-slim            -> ghcr.io/gitguardian/wolfi/bun (glibc+apk)
+#   * agent @earendil-works/pi      -> pi-bolt (AOT-compiled Pi, native binary)
+#   * `pi` is aliased to `pi-bolt`
+#   * the `~/.pi` config mount is kept (Pi-Bolt is Pi; reads ~/.pi/agent)
+#   * Claude Code and ZCode are added as extra harnesses
+#
+# Wolfi is glibc, which pi-bolt (glibc x86-64) and Claude Code's native binary
+# both require; musl/Alpine would not work here.
+
+FROM ghcr.io/gitguardian/wolfi/bun:latest
+
+USER root
+
+ARG PI_BOLT_VERSION=latest
+ARG CLAUDE_CODE_CHANNEL=latest
+ARG ZCODE_VERSION=latest
+
+# Bun installs global packages under $BUN_INSTALL/bin.
+ENV BUN_INSTALL=/usr/local \
+    HOME=/root \
+    PATH=/root/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RUN apk add --no-cache \
+        bash ca-certificates curl git gosu ripgrep jq \
+        openssl tar xz \
+    && rm -rf /var/cache/apk/*
+
+# --- Pi-Bolt (native Pi). `bun add -g --trust` runs the package's postinstall
+# (places the launcher); the native binary is fetched on first run into
+# ~/.pi-bolt. `pi` is aliased to it so `vp run pi` / `pi` behave identically.
+RUN bun add -g --trust "pi-bolt@${PI_BOLT_VERSION}" \
+    && ln -sf /usr/local/bin/pi-bolt /usr/local/bin/pi
+
+# --- Claude Code (native installer; glibc binary, OK on Wolfi). --------------
+RUN curl -fsSL https://claude.ai/install.sh | bash -s "${CLAUDE_CODE_CHANNEL}" \
+    && test -x /root/.local/bin/claude \
+    && ln -sf /root/.local/bin/claude /usr/local/bin/claude
+
+# --- ZCode (terminal client for the ZCode agent runtime). -------------------
+# NOTE: zcode declares `engines.node >= 22.19`; it runs under Bun here. If a
+# later zcode release needs real Node, `apk add nodejs-24` (Wolfi) and retry.
+RUN bun install -g "zcode-app-cli@${ZCODE_VERSION}"
+
+# Runtime HOME is the agent config dir (VibePod mounts the persisted config
+# there), mirroring the upstream VibePod pi image's /config layout.
+ENV HOME=/config \
+    SHELL=/bin/bash \
+    TERM=xterm-256color \
+    DISABLE_AUTOUPDATER=1 \
+    DISABLE_TELEMETRY=1 \
+    DISABLE_ERROR_REPORTING=1 \
+    USE_BUILTIN_RIPGREP=0
+
+RUN mkdir -p /config/.pi/agent /config/.claude /config/.zcode /workspace \
+    && chmod 0755 /workspace
+
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh
+
+WORKDIR /workspace
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["pi"]

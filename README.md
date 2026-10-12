@@ -1,69 +1,87 @@
 <p align="center">
-  <img src="assets/firstmate-homelab-logo.svg" alt="firstmate-homelab" width="520" />
+  <img src="assets/firstmate-homelab-logo.svg" alt="VibePod Homelab" width="520" />
 </p>
 
 <p align="center">
-  Self-hosted development environment for <strong>Firstmate + Herdr + Codex CLI</strong>.
+  Self-hosted <strong>VibePod</strong> agent platform with <strong>Pi-Bolt</strong>, <strong>Claude Code</strong> and <strong>ZCode</strong>, running in a rootless <strong>Podman-in-Podman</strong> (PinP) pod.
 </p>
 
-Firstmate Homelab keeps the agent runtime, Git worktrees, GitHub credentials and project Docker workloads on a homelab server. Agents get an isolated Docker-in-Docker environment instead of access to the physical host Docker socket.
+VibePod Homelab keeps the agent runner, credentials, memory and project workspaces on a homelab server. Agents run in containers managed by [VibePod](https://vibepod.dev), spawned into an isolated inner Podman — **PinP**, the Podman equivalent of Docker-in-Docker — instead of touching the host Docker/Podman socket.
 
-> Herdr and Firstmate run on your infrastructure. Codex model inference still runs through OpenAI.
+> Everything runs **rootless** (Podman + systemd user units, pasta networking). No daemon, no Docker, no root.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    DEV["Developer"] -->|"SSH + fmh"| FM["Firstmate<br/>Herdr + Codex"]
-    FM -->|"Docker over TLS"| DIND["Isolated DinD<br/>Docker daemon"]
-    DIND --> APPS["Project containers"]
-
-    HOME[("firstmate-home<br/>state + projects")] --> FM
-    HOME --> DIND
-    DATA[("dind-data<br/>images + volumes")] --> DIND
+    DEV["Developer"] -->|"SSH + vph"| VP["vibepod<br/>VibePod CLI + Herdr + Fish"]
+    VP -->|"podman socket"| PINP["pinp<br/>Podman-in-Podman"]
+    PINP --> AGENTS["agent containers<br/>Pi-Bolt · Claude Code · ZCode"]
+    MEM[("ai-memory<br/>shared long-term memory")] --> AGENTS
+    CFG[("vibepod-config<br/>credentials + profiles")] --> VP
+    CFG --> PINP
+    DATA[("pinp-data<br/>images + containers")] --> PINP
 ```
+
+- **`vibepod`** — the control plane: VibePod CLI (`vp`), Herdr (multiplexer), the Fish developer shell, the podman client, and the ai-memory CLI.
+- **`pinp`** — Podman-in-Podman: the inner podman daemon VibePod targets. Agents (and any project containers they build) run here.
+- **`ai-memory`** — a long-term memory server shared by every agent across sessions.
+
+The important boundary is unchanged from the old DinD design: agents get a real container runtime, but **not the host's socket**.
 
 ## Quick start
 
 ```bash
-git clone https://github.com/sangimed/firstmate-homelab.git
-cd firstmate-homelab
-./scripts/install.sh
+git clone https://github.com/<you>/vibepod-homelab.git
+cd vibepod-homelab
+./scripts/install.sh   # deploy rootless quadlets + build control plane + PinP
 
-fmh login
-fmh doctor
-fmh connect
+vph setup              # build the Pi-Bolt image into PinP + wire ai-memory
+vph login              # authenticate agents + GitHub CLI
+vph doctor             # verify the stack
+vph connect            # open a Herdr multiplexer session
 ```
+
+Inside a Herdr pane, run an agent:
+
+```bash
+vp run pi        # Pi-Bolt (default)
+vp run claude    # Claude Code
+vp run zcode     # ZCode
+```
+
+## Images
+
+| Image | File | Base | Purpose |
+|-------|------|------|---------|
+| control plane | `Containerfile` | `ghcr.io/gitguardian/wolfi/bun` | `vp` + Herdr + Fish + toolbox + podman client + ai-memory CLI |
+| PinP | `docker/pinp/Containerfile` | `quay.io/podman/stable` | inner podman daemon (vfs storage) |
+| Pi agent | `docker/pi/Containerfile` | `ghcr.io/gitguardian/wolfi/bun` | Pi-Bolt (aliased `pi`) + Claude Code + ZCode |
+| ai-memory | `docker/ai-memory/Containerfile` | `chainguard/wolfi-base` | long-term memory server (upstream release binary + hooks) |
+
+Wolfi is **glibc + apk** — small like Alpine but able to run native binaries (`pi-bolt`, Claude Code), which musl cannot.
 
 ## Documentation
 
-The full documentation is maintained with **MkDocs Material** under [`docs/`](docs/index.md) and is published at:
+Full documentation lives under [`docs/`](docs/index.md) (MkDocs Material). Key pages:
 
-**https://sangimed.github.io/firstmate-homelab/**
+- [Architecture](docs/concepts/architecture.md) — pod topology, PinP, persistence, networking.
+- [Security](docs/concepts/security.md) — trust boundary and PinP limitations.
+- [Deployment](docs/reference/deployment.md) — rootless prerequisites, quadlets, subuid/subgid, pasta, ai-memory + VibePod board wiring.
 
-Run it locally with:
+Run locally:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-docs.txt
 make docs-serve
 ```
 
-Then open `http://127.0.0.1:8000`.
-
-The documentation covers installation, daily CLI usage, Docker development, the developer shell, configuration, architecture, security and documentation deployment.
-
-```bash
-make docs-build   # validate/build the static site
-make docs-serve   # local live-reload server
-```
-
-Documentation changes are validated on pull requests and deployed to GitHub Pages after they reach `main`.
-
 ## Upstream projects
 
-- [Firstmate](https://github.com/kunchenguid/firstmate)
-- [Herdr](https://herdr.dev/)
-- [Treehouse](https://github.com/kunchenguid/treehouse)
-- [Codex](https://developers.openai.com/codex/)
+- [VibePod](https://vibepod.dev) — one CLI for all AI coding agents, in containers.
+- [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt) — Pi, compiled ahead of time to native code.
+- [Pi](https://github.com/earendil-works/pi) — the coding agent.
+- [Herdr](https://herdr.dev) — terminal multiplexer for coding agents.
+- [ai-memory](https://github.com/akitaonrails/ai-memory) — long-term memory for coding agents.
+- [vibepod-board](https://github.com/VibePod/vibepod-board) — task board for agent automation.

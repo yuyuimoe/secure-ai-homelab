@@ -1,0 +1,9 @@
+# VibePod config: agent credentials, profiles, session logs, proxy DB.
+# Mounted at the SAME path (/home/developer/.config/vibepod) in both the
+# control plane and PinP, so VibePod's agent config-dir mounts resolve inside
+# the inner podman (same requirement the old DinD shared paths had).
+
+[Volume]
+
+[Install]
+WantedBy=default.target

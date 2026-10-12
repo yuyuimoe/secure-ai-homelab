@@ -1,0 +1,17 @@
+# VibePod Homelab — PinP (Podman-in-Podman) image.
+#
+# The inner podman daemon VibePod spawns agent containers into. Runs as root
+# *inside the pod's user namespace* (the pod itself is rootless). vfs storage
+# avoids nested-overlay problems; the socket goes on the shared volume.
+
+FROM quay.io/podman/stable:latest
+
+# Nested rootless podman: vfs storage (no nested overlay/fuse), runroot under
+# /run so a noexec /tmp can't break the storage lock.
+RUN printf '[storage]\ndriver = "vfs"\nrunroot = "/run/containers/storage"\ngraphroot = "/var/lib/containers/storage"\n' \
+        > /etc/containers/storage.conf
+
+COPY entrypoint.sh /usr/local/bin/pinp-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/pinp-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/pinp-entrypoint.sh"]

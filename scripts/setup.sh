@@ -1,90 +1,67 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT_DIR"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+SOCKET="${CONTAINER_HOST:-unix:///run/podman/podman.sock}"
 
-if ! docker compose version >/dev/null 2>&1; then
-  echo "Docker Compose v2 is required (the 'docker compose' command)." >&2
-  exit 1
+# Load .env overrides (agent version pins, ai-memory endpoint/token).
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$ROOT_DIR/.env"
+  set +a
 fi
 
-if [[ ! -f .env ]]; then
-  cp .env.example .env
-  echo "Created .env from .env.example."
-  echo "You can edit GIT_USER_NAME/GIT_USER_EMAIL now or later."
-fi
+# In-container path of the vibepod-config volume (same in the control plane
+# and PinP, so VibePod's agent config-dir mounts resolve inside the inner daemon).
+CFG="/home/developer/.config/vibepod"
 
-if [[ "${1:-}" == "--no-build" ]]; then
-  echo "Starting the already-built Firstmate container..."
-  docker compose up -d
-else
-  echo "Building and starting the Firstmate container..."
-  docker compose up -d --build
-fi
+# Ensure the pod + control plane are up first.
+systemctl --user start vibepod-pod.service pinp.service vibepod.service 2>/dev/null || true
 
-bash "$ROOT_DIR/scripts/ensure-herdr.sh" --update
+podman_in() { podman --url "$SOCKET" "$@"; }
 
-echo "Installing any missing Firstmate-managed toolchain dependencies..."
-docker compose exec -T firstmate bash -lc '
-  set -euo pipefail
-  export PATH="$HOME/.local/bin:$PATH"
-  cd /opt/firstmate
+echo "Building the Pi agent image (pi-bolt + claude + zcode) into PinP..."
+# `podman build` targets the INNER daemon through the shared socket, so the
+# image lands in PinP storage with no registry involved (fully self-hosted).
+podman_in build \
+  --build-arg "PI_BOLT_VERSION=${PI_BOLT_VERSION:-latest}" \
+  --build-arg "CLAUDE_CODE_CHANNEL=${CLAUDE_CODE_CHANNEL:-latest}" \
+  --build-arg "ZCODE_VERSION=${ZCODE_VERSION:-latest}" \
+  -t vibepod/pi-bolt:latest -f "$ROOT_DIR/docker/pi/Containerfile" "$ROOT_DIR/docker/pi"
 
-  diagnostics="$(
-    FM_BOOTSTRAP_DETECT_ONLY=1 \
-    FM_BOOTSTRAP_NETWORK=skip \
-    ./bin/fm-bootstrap.sh
-  )"
+echo "Writing VibePod config (default agent pi, image vibepod/pi-bolt:latest)..."
+podman exec vibepod sh -c "mkdir -p '$CFG' && cat > '$CFG/config.yaml'" <<'YAML'
+version: 1
+default_agent: pi
+agents:
+  pi:
+    enabled: true
+    image: vibepod/pi-bolt:latest
+    env: {}
+YAML
 
-  if [[ -n "$diagnostics" ]]; then
-    printf "%s\n" "$diagnostics"
-  fi
+# ai-memory: reachable from PinP agents through the pasta gateway alias.
+AI_MEMORY_URL="${AI_MEMORY_SERVER_URL:-http://host.containers.internal:49374}"
+echo "Wiring ai-memory into the Pi and Claude config dirs (server: $AI_MEMORY_URL)..."
 
-  missing="$(
-    printf "%s\n" "$diagnostics" \
-      | sed -n "s/^MISSING: \([^ ]*\).*/\1/p" \
-      | sort -u \
-      | tr "\n" " "
-  )"
+wire_ai_memory() {
+  local agent_dir="$1" client="$2" agent="$3"
+  podman exec vibepod sh -lc "
+    export AI_MEMORY_SERVER_URL='$AI_MEMORY_URL'
+    export AI_MEMORY_AUTH_TOKEN='${AI_MEMORY_AUTH_TOKEN:-}'
+    mkdir -p '$agent_dir'
+    HOME='$agent_dir' ai-memory install-mcp --client '$client' --apply || true
+    HOME='$agent_dir' ai-memory install-hooks --agent '$agent' --apply || true
+  "
+}
 
-  if [[ -n "${missing// }" ]]; then
-    # shellcheck disable=SC2086
-    ./bin/fm-bootstrap.sh install $missing
-  fi
-
-  # These setup commands are idempotent and are intentionally re-run because
-  # /opt/firstmate belongs to the disposable container image.
-  for tool in gh-axi chrome-devtools-axi lavish-axi; do
-    if command -v "$tool" >/dev/null 2>&1; then
-      "$tool" setup hooks
-    fi
-  done
-
-  remaining="$(
-    FM_BOOTSTRAP_DETECT_ONLY=1 \
-    FM_BOOTSTRAP_NETWORK=skip \
-    ./bin/fm-bootstrap.sh
-  )"
-
-  if printf "%s\n" "$remaining" | grep -Eq "^(MISSING|MISSING_MANUAL|BACKEND_INVALID):"; then
-    echo "Toolchain bootstrap is still incomplete:" >&2
-    printf "%s\n" "$remaining" >&2
-    exit 1
-  fi
-'
-
-echo "Installing the Herdr Codex integration..."
-docker compose exec -T firstmate bash -lc '
-  set -euo pipefail
-  export PATH="$HOME/.local/bin:$PATH"
-  mkdir -p "${CODEX_HOME:-$HOME/.codex}"
-  herdr integration install codex
-'
+wire_ai_memory "$CFG/agents/pi"     pi          pi
+wire_ai_memory "$CFG/agents/claude" claude-code claude-code
 
 echo
-echo "Base stack is ready."
+echo "Base stack ready."
 echo "Next:"
-echo "  fmh login"
-echo "  fmh doctor"
-echo "  fmh connect"
+echo "  ./scripts/login.sh   # authenticate agents + GitHub CLI"
+echo "  ./scripts/doctor.sh  # verify"
+echo "  ./scripts/connect.sh # open Herdr"

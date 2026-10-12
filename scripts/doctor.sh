@@ -1,134 +1,49 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT_DIR"
+# Verify the stack end to end.
+failed=0
+ok()   { printf "OK   %-28s %s\n" "$1" "$2"; }
+bad()  { printf "FAIL %-28s %s\n" "$1" "$2"; failed=1; }
 
-docker compose up -d >/dev/null
+echo "== systemd units =="
+for u in vibepod-pod pinp vibepod ai-memory; do
+  if systemctl --user --quiet is-active "$u.service" 2>/dev/null; then ok "$u" "active"; else bad "$u" "not active"; fi
+done
 
-docker compose exec -T firstmate bash -lc '
-  set -u
-  export PATH="$HOME/.local/bin:$PATH"
-
-  failed=0
-
-  check_command() {
-    if command -v "$1" >/dev/null 2>&1; then
-      printf "OK   %-22s %s\n" "$1" "$("$1" --version 2>/dev/null | head -n 1)"
+echo
+echo "== control plane =="
+podman exec vibepod fish -c '
+  for c in fish herdr vp podman ai-memory shellcheck gh git eza bat fzf zoxide rg btop direnv
+    if command -v $c >/dev/null 2>&1
+      echo "OK   $c"
     else
-      printf "FAIL %-22s missing\n" "$1"
-      failed=1
-    fi
-  }
+      echo "FAIL $c"
+    end
+  end
+' || bad "control plane" "exec failed"
 
-  check_docker_bind() {
-    local base="$1" label="$2" probe marker output
-    probe="$base/.fmh-docker-probe-$$"
-    marker="firstmate-dind-$RANDOM-$$"
-    mkdir -p "$probe"
-    printf "%s\n" "$marker" > "$probe/marker"
+echo
+echo "== PinP (inner podman) =="
+if podman --url unix:///run/podman/podman.sock info >/dev/null 2>&1; then
+  ok "pinp socket" "reachable"
+  podman --url unix:///run/podman/podman.sock version --format "Client {{.Client.Version}} / Server {{.Server.Version}}" 2>/dev/null || true
+else
+  bad "pinp socket" "cannot reach inner podman"
+fi
 
-    if output="$(docker run --rm \
-      --mount "type=bind,src=$probe,dst=/probe,readonly" \
-      busybox:1.37 cat /probe/marker 2>/dev/null)" \
-      && [[ "$output" == "$marker" ]]; then
-      printf "OK   %-22s shared with DinD\n" "$label"
-    else
-      printf "FAIL %-22s DinD cannot bind-mount this path\n" "$label"
-      failed=1
-    fi
+echo
+echo "== ai-memory =="
+if curl -fsS http://127.0.0.1:49374/mcp -X POST -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"doctor","version":"0"}}}' >/dev/null 2>&1; then
+  ok "ai-memory" "MCP endpoint responds"
+else
+  bad "ai-memory" "MCP endpoint unreachable"
+fi
 
-    rm -rf "$probe"
-  }
+echo
+echo "== VibePod =="
+podman exec vibepod vp --version 2>/dev/null && ok "vp" "installed" || bad "vp" "missing"
+podman exec vibepod vp doctor pi 2>/dev/null || true
 
-  echo "== Core =="
-  check_command node
-  check_command git
-  check_command gh
-  check_command codex
-  check_command herdr
-  check_command treehouse
-  check_command no-mistakes
-  check_command gh-axi
-  check_command chrome-devtools-axi
-  check_command lavish-axi
-  check_command tasks-axi
-  check_command quota-axi
-
-  echo
-  echo "== Developer shell =="
-  check_command fish
-  check_command fzf
-  check_command zoxide
-  check_command rg
-  check_command exa
-  check_command batcat
-  check_command fdfind
-  check_command btop
-  check_command direnv
-  check_command shellcheck
-
-  echo
-  echo "== Isolated Docker runtime =="
-  check_command docker
-  if docker info >/dev/null 2>&1; then
-    printf "OK   %-22s connected to DinD\n" "docker daemon"
-    docker version --format "Client {{.Client.Version}} / Server {{.Server.Version}}" 2>/dev/null || true
-    docker compose version 2>/dev/null || true
-    check_docker_bind "$FM_HOME/projects" "Firstmate projects"
-    check_docker_bind "$HOME/.treehouse" "Treehouse worktrees"
-  else
-    printf "FAIL %-22s cannot reach isolated DinD daemon\n" "docker daemon"
-    failed=1
-  fi
-
-  echo
-  echo "== Configuration =="
-  printf "SHELL:         %s\n" "${SHELL:-<unset>}"
-  printf "FM_HOME:       %s\n" "$FM_HOME"
-  printf "FM_BACKEND:    %s\n" "${FM_BACKEND:-<unset>}"
-  printf "DOCKER_HOST:   %s\n" "${DOCKER_HOST:-<unset>}"
-  printf "backend file:  %s\n" "$(cat "$FM_HOME/config/backend" 2>/dev/null || echo missing)"
-  printf "crew harness:  %s\n" "$(cat "$FM_HOME/config/crew-harness" 2>/dev/null || echo missing)"
-
-  echo
-  echo "== Authentication =="
-  if codex login status; then
-    :
-  else
-    failed=1
-  fi
-
-  if gh auth status; then
-    :
-  else
-    failed=1
-  fi
-
-  echo
-  echo "== Herdr integration =="
-  if herdr integration status; then
-    :
-  else
-    failed=1
-  fi
-
-  echo
-  echo "== Firstmate bootstrap =="
-  cd /opt/firstmate
-  bootstrap="$(
-    FM_BOOTSTRAP_DETECT_ONLY=1 \
-    ./bin/fm-bootstrap.sh
-  )"
-  if [[ -n "$bootstrap" ]]; then
-    printf "%s\n" "$bootstrap"
-  else
-    echo "OK   Firstmate bootstrap reports no actionable problems."
-  fi
-
-  if printf "%s\n" "$bootstrap" | grep -Eq "^(MISSING|MISSING_MANUAL|NEEDS_GH_AUTH|BACKEND_INVALID):"; then
-    failed=1
-  fi
-
-  exit "$failed"
-'
+exit "$failed"

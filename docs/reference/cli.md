@@ -1,108 +1,46 @@
 # CLI reference
 
-`fmh` is the host-side launcher for Firstmate Homelab. The installer also creates the longer `firstmate-homelab` alias.
-
-The launcher remembers the repository checkout path, so commands work from any current directory.
+`vph` is the global launcher. It works from any directory and targets the rootless Podman pod, never the host container socket.
 
 ## Commands
 
-| Command | Purpose |
-| --- | --- |
-| `fmh setup` | Build/start the stack and provision Firstmate tooling |
-| `fmh login` | Authenticate Codex and GitHub CLI |
-| `fmh doctor` | Verify tooling, authentication, DinD and shared workspaces |
-| `fmh connect` | Attach to the persistent Herdr session |
-| `fmh update` | Refresh the stack while preserving persistent state |
-| `fmh up` | Start Firstmate and DinD |
-| `fmh down` | Stop the Compose stack |
-| `fmh status` | Show Compose service status |
-| `fmh logs` | Follow Firstmate and DinD logs |
-| `fmh shell` | Open the Fish developer shell |
-| `fmh projects` | List Firstmate-managed projects |
-| `fmh paths` | Show installation, volume and Docker paths |
-| `fmh uninstall` | Remove launcher/runtime containers while keeping persistent data |
-| `fmh uninstall --purge` | Delete persistent Firstmate and DinD data too |
-| `fmh help` | Show command help |
+| Command | Action |
+|---|---|
+| `vph setup` | Build the Pi agent image into PinP + write VibePod config + wire ai-memory |
+| `vph login` | Authenticate the GitHub CLI (and guide agent login) |
+| `vph doctor` | Verify the whole stack end to end |
+| `vph connect` | Open a Herdr multiplexer session |
+| `vph update` | Rebuild control plane + PinP + ai-memory + Pi agent, restart the pod |
+| `vph up` / `vph down` | Start / stop the pod via systemd |
+| `vph status` | Show pod and container status |
+| `vph logs` | Follow control-plane, PinP and ai-memory logs |
+| `vph shell` | Open the Fish developer shell |
+| `vph run <agent> [args…]` | Run a VibePod agent (`pi`, `claude`, `zcode`, …) |
+| `vph board <args…>` | Run `vp board` in the control plane |
+| `vph help` | Show this help |
 
 ## Work from any directory
 
-These all target the same installation:
-
-```bash
-cd /tmp && fmh status
-cd ~ && fmh doctor
-cd ~/some-project && fmh connect
-```
-
-The caller's current directory is not implicitly treated as a Firstmate workspace.
+The launcher resolves the installation directory from `~/.config/vibepod-homelab/config` (written by `scripts/install.sh`), so `vph` works regardless of the current directory.
 
 ## Inspect the runtime
 
 ```bash
-fmh status
-fmh logs
-fmh paths
-```
-
-`fmh paths` reports the actual Docker volume mountpoints instead of assuming a host storage path.
-
-## Interactive sessions
-
-Open a regular Fish shell:
-
-```bash
-fmh shell
-```
-
-Leave with `exit` or `Ctrl+D`.
-
-Attach to Herdr:
-
-```bash
-fmh connect
-```
-
-Detach without stopping panes or agents with:
-
-```text
-Ctrl+B, then Q
+vph status          # pod + containers
+vph logs            # follow logs
+podman volume ls    # persistent volumes
 ```
 
 ## Update
 
-```bash
-fmh update
-```
-
-The update flow pulls runtime images, rebuilds the disposable Firstmate image and refreshes persistent user-space tooling.
-
-It preserves:
-
-- Codex and GitHub authentication;
-- Firstmate and Herdr state;
-- projects and Treehouse worktrees;
-- DinD images and BuildKit cache;
-- project containers and inner Docker volumes;
-- DinD TLS material.
+`vph update` rebuilds the images and restarts the pod. Credentials, memory, workspaces and PinP data are preserved.
 
 ## Uninstall
 
-A safe uninstall keeps persistent data:
-
 ```bash
-fmh uninstall
+systemctl --user disable --now vibepod-pod.service pinp.service vibepod.service ai-memory.service init.service
+rm -f ~/.config/containers/systemd/vibepod*.{pod,container} ~/.config/containers/systemd/{pinp,ai-memory,init,workspaces}*.*
+rm -f ~/.local/bin/vph ~/.local/bin/vibepod-homelab
 ```
 
-A full purge deletes Firstmate state, project clones, worktrees, DinD images, containers, build cache, inner volumes and TLS material:
-
-```bash
-fmh uninstall --purge
-```
-
-The purge requires typing `purge` explicitly. Automation can opt into destructive removal with:
-
-```bash
-fmh uninstall --purge --yes
-```
-
-The repository checkout itself is never deleted automatically.
+Persistent volumes are left in place; delete them with `podman volume rm` if you want to purge state.

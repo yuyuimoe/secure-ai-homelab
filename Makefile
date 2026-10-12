@@ -1,4 +1,7 @@
-.PHONY: setup login doctor connect update up down logs docs-install docs-serve docs-build
+.PHONY: install setup login doctor connect update up down status logs shell docs-install docs-serve docs-build
+
+install:
+	./scripts/install.sh
 
 setup:
 	./scripts/setup.sh
@@ -16,13 +19,19 @@ update:
 	./scripts/update.sh
 
 up:
-	docker compose up -d
+	systemctl --user start vibepod-pod.service
 
 down:
-	docker compose down
+	systemctl --user stop vibepod-pod.service
+
+status:
+	podman pod ps && podman ps -a
 
 logs:
-	docker compose logs -f firstmate
+	podman logs -f vibepod pinp ai-memory
+
+shell:
+	podman exec -it vibepod fish
 
 docs-install:
 	python -m pip install -r requirements-docs.txt

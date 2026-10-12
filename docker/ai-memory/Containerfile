@@ -1,0 +1,62 @@
+# VibePod Homelab — ai-memory server (long-term memory: HTTP MCP at /mcp,
+# lifecycle /hook, web UI). Built locally so the stack stays fully self-hosted.
+#
+# Upstream publishes `akitaonrails/ai-memory`, whose runtime stage is
+# debian:bookworm-slim. This vendored build keeps the same layout/contract but
+# lands it on Chainguard's Wolfi base (glibc + apk): Alpine-small and
+# CVE-light, and consistent with the control-plane and Pi images.
+#
+# The upstream Rust release binary is glibc-linked and needs only
+# glibc/libgcc/zlib (all present in wolfi-base) plus CA certificates for
+# outgoing HTTPS to LLM providers. It is *not* a musl/static build, so a plain
+# Alpine base would not work — Wolfi gives us glibc without Debian.
+
+FROM docker.io/chainguard/wolfi-base:latest
+
+ARG AI_MEMORY_VERSION=2.6.3
+# Upstream release assets are named by architecture: amd64 -> x86_64,
+# arm64 -> aarch64. TARGETARCH is set by BuildKit/Podman buildx.
+ARG TARGETARCH
+
+# Fetch the release tarball (binary + bundled lifecycle hooks). curl/tar are
+# only needed at build time; ca-certificates-bundle ships in wolfi-base.
+RUN set -eux; \
+    apk add --no-cache curl; \
+    case "${TARGETARCH:-amd64}" in \
+        amd64|"") arch=x86_64 ;; \
+        arm64)    arch=aarch64 ;; \
+        *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/akitaonrails/ai-memory/releases/download/v${AI_MEMORY_VERSION}/ai-memory-linux-${arch}.tar.gz" -o /tmp/aim.tar.gz; \
+    mkdir -p /opt/ai-memory; \
+    tar -xzf /tmp/aim.tar.gz -C /opt/ai-memory; \
+    mkdir -p /usr/local/bin /usr/local/share/ai-memory; \
+    install -m 0755 /opt/ai-memory/ai-memory /usr/local/bin/ai-memory; \
+    cp -a /opt/ai-memory/hooks /usr/local/share/ai-memory/hooks; \
+    rm -rf /opt/ai-memory /tmp/aim.tar.gz; \
+    apk del curl; \
+    rm -rf /var/cache/apk/*
+
+# Non-root service account owning /data (uid 1000), mirroring upstream. The
+# unit runs with UserNS=keep-id so the named volume is owned by the host user.
+RUN addgroup -S -g 1000 ai-memory \
+    && adduser -S -D -H -u 1000 -G ai-memory -h /data -s /sbin/nologin ai-memory \
+    && mkdir -p /data \
+    && chown -R ai-memory:ai-memory /data
+
+# AI_MEMORY_IN_CONTAINER tells `serve` the 0.0.0.0 bind is a namespace
+# requirement, not evidence of network exposure (upstream issue #407).
+# AI_MEMORY_ALLOWED_HOSTS replaces the loopback-only default; the unit
+# overrides it with the pasta gateway alias (host.containers.internal).
+ENV AI_MEMORY_DATA_DIR=/data \
+    AI_MEMORY_IN_CONTAINER=1 \
+    AI_MEMORY_ALLOWED_HOSTS="localhost,127.0.0.1,::1,host.docker.internal"
+
+WORKDIR /data
+EXPOSE 49374
+# No HEALTHCHECK: the unit builds OCI-format images (Podman ignores a
+# Dockerfile HEALTHCHECK there) and `scripts/doctor.sh` probes /mcp instead.
+ENTRYPOINT ["/usr/local/bin/ai-memory"]
+CMD ["serve", "--transport", "http", "--bind", "0.0.0.0:49374", "--enable-web"]
+
+USER ai-memory

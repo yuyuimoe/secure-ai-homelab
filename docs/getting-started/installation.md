@@ -1,109 +1,70 @@
 # Installation
 
+Deploy VibePod Homelab as rootless Podman quadlets (systemd user units).
+
 ## Requirements
 
-The homelab host needs:
-
-- Linux;
-- Docker Engine 26 or newer;
-- Docker Compose v2 with `volume.subpath` support;
-- outbound HTTPS access.
-
-Nothing else is required on the host.
+- Linux with Podman 5+ (pasta rootless networking)
+- a user systemd session
+- subordinate uid/gid ranges for PinP (see [Deployment](../reference/deployment.md#prerequisites))
 
 ## Install
 
-Clone the repository and run the installer:
-
 ```bash
-git clone https://github.com/sangimed/firstmate-homelab.git
-cd firstmate-homelab
+git clone https://github.com/<you>/vibepod-homelab.git
+cd vibepod-homelab
+
+cp .env.example .env      # edit GIT_USER_NAME/EMAIL, AI_MEMORY_*, pins
 ./scripts/install.sh
 ```
 
-The installer:
+`install.sh`:
 
-1. validates Docker and Compose support;
-2. records the checkout path under `~/.config/firstmate-homelab/`;
-3. installs the global `fmh` launcher and `firstmate-homelab` alias in `~/.local/bin`;
-4. creates `.env` from `.env.example` when needed;
-5. initializes the shared project/worktree paths;
-6. starts Firstmate and the isolated DinD daemon;
-7. installs or updates Herdr in the persistent agent home;
-8. runs Firstmate's bootstrap for supported helper tools;
-9. installs the Herdr Codex integration.
+1. checks Podman, the user systemd session and `/etc/subuid` ranges;
+2. copies `systemd/*` quadlets into `~/.config/containers/systemd/`;
+3. builds the control-plane, PinP and ai-memory images (locally, from Wolfi bases — no registry pull);
+4. enables and starts the pod and its containers;
+5. installs the `vph` launcher into `~/.local/bin`.
 
-To install only the global launcher without provisioning the stack:
+## Bootstrap
 
 ```bash
-./scripts/install.sh --skip-setup
+vph setup
 ```
 
-## PATH
-
-If `~/.local/bin` is not already in your `PATH`, the installer prints shell-specific instructions for Fish, Zsh, Bash and other common shells.
-
-## Configure Git identity
-
-Edit `.env` before first use if you want to customize the Git identity used by agents:
-
-```dotenv
-GIT_USER_NAME=Your Name
-GIT_USER_EMAIL=your-github-noreply@example.com
-```
-
-Version and volume settings are documented in [Configuration](../reference/configuration.md).
+`setup.sh` builds the Pi agent image (Pi-Bolt + Claude Code + ZCode) **into PinP**, writes the VibePod config (default agent `pi`, image `vibepod/pi-bolt:latest`), and wires ai-memory into the Pi and Claude config dirs.
 
 ## Authenticate
 
-Run:
-
 ```bash
-fmh login
+vph login
 ```
 
-For Codex on a headless server, the login flow uses device authentication. Open the displayed URL in your normal browser and enter the one-time code.
+Authenticates the GitHub CLI (shared by agents for commits). Then start each agent once and authenticate in its TUI:
 
-The same command authenticates GitHub CLI and configures Git to use the GitHub CLI credential helper. Authentication is stored in the persistent Firstmate home.
+```bash
+vph run pi        # Pi-Bolt  -> run /login
+vph run claude    # Claude Code -> /login
+```
 
 ## Verify
 
-Run:
-
 ```bash
-fmh doctor
+vph doctor
 ```
 
-The doctor checks the core toolchain, authentication, DinD connectivity, Firstmate configuration, Herdr integration and real bind-mount visibility for project and Treehouse paths.
+Checks the systemd units, the control-plane tooling, the PinP socket, the ai-memory MCP endpoint, and VibePod.
 
 ## Connect
 
-Attach to the persistent Herdr session:
-
 ```bash
-fmh connect
+vph connect
 ```
 
-On an empty Herdr pane, launch Codex:
-
-```bash
-codex
-```
-
-Because the working directory is `/opt/firstmate`, Codex reads Firstmate's `AGENTS.md` and can act as the Firstmate captain.
-
-To detach from the Herdr session without stopping its panes or agents:
-
-```text
-Ctrl+B, then Q
-```
-
-Return later with `fmh connect`.
-
-For an ordinary developer shell opened with `fmh shell`, leave with `exit` or `Ctrl+D`.
+Opens a Herdr multiplexer session. Run `vp run <agent>` inside a pane.
 
 ## Next steps
 
-- [CLI reference](../reference/cli.md)
-- [Docker development](../guides/docker-development.md)
-- [Architecture](../concepts/architecture.md)
+- [Architecture](../concepts/architecture.md) — how the pod is put together.
+- [PinP development](../guides/pinp-development.md) — building/running project containers.
+- [CLI reference](../reference/cli.md) — every `vph` command.

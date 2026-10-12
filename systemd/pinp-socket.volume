@@ -1,0 +1,9 @@
+# Shared podman socket directory. PinP writes /run/podman/podman.sock here;
+# the control plane mounts it read-only at the same path and its podman client
+# (and VibePod auto-detection) find the inner daemon there. No DOCKER_HOST is
+# set — VibePod assumes Podman when the Docker env var is absent.
+
+[Volume]
+
+[Install]
+WantedBy=default.target

@@ -2,155 +2,100 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+SYSTEMD_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/containers/systemd"
 BIN_DIR="${HOME}/.local/bin"
-CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/firstmate-homelab"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/vibepod-homelab"
 CONFIG_FILE="$CONFIG_DIR/config"
-RUN_SETUP=1
+# The ai-memory unit reads its runtime environment from here (EnvironmentFile=).
+# Deliberately $HOME/.config so it matches the unit's %h/.config path.
+AI_ENV_DIR="$HOME/.config/vibepod-homelab"
+AI_ENV_FILE="$AI_ENV_DIR/ai-memory.env"
+
+# Load .env overrides (version pins, ai-memory secrets). Values become the
+# defaults for --build-arg and the generated ai-memory env file.
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$ROOT_DIR/.env"
+  set +a
+fi
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/install.sh [--skip-setup]
+Usage: ./scripts/install.sh
 
-Installs the global `fmh` command (and `firstmate-homelab` alias) into
-~/.local/bin and records this repository as the installation directory.
+Deploys the VibePod Homelab as rootless Podman quadlets (systemd user units):
+  1. copies systemd/*.pod|*.container|*.volume into ~/.config/containers/systemd/
+  2. builds the control-plane, PinP and ai-memory images
+  3. enables and starts the pod + its containers
 
-By default the normal stack setup is run as part of installation. Use
---skip-setup to install only the launcher.
+Requires Podman 5+ (pasta rootless networking) and a user systemd session.
 EOF
 }
 
-print_path_instructions() {
-  local shell_name
-  shell_name="$(basename "${SHELL:-sh}")"
-
-  printf '\nNote: %s is not currently in PATH.\n' "$BIN_DIR"
-  printf 'Detected login shell: %s\n\n' "$shell_name"
-
-  case "$shell_name" in
-    fish)
-      cat <<'EOF'
-Fish persists paths added with `fish_add_path` automatically:
-
-  fish_add_path ~/.local/bin
-
-The command is available immediately in the current Fish session; no shell
-restart is required.
-EOF
-      ;;
-    zsh)
-      cat <<'EOF'
-Add ~/.local/bin to Zsh and reload your configuration:
-
-  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-  source ~/.zshrc
-EOF
-      ;;
-    bash)
-      cat <<'EOF'
-Add ~/.local/bin to Bash and reload your configuration:
-
-  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-  source ~/.bashrc
-EOF
-      ;;
-    ksh)
-      cat <<'EOF'
-Add ~/.local/bin to KornShell and reload your configuration:
-
-  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.kshrc
-  . ~/.kshrc
-EOF
-      ;;
-    sh|dash|ash)
-      cat <<'EOF'
-Add ~/.local/bin to your POSIX shell profile and reload it:
-
-  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile
-  . ~/.profile
-EOF
-      ;;
-    *)
-      cat <<EOF
-Your shell is not one of the shells handled explicitly by the installer.
-Add this directory to PATH using your shell's normal configuration mechanism:
-
-  $BIN_DIR
-
-For POSIX-compatible shells, this is typically:
-
-  export PATH="\$HOME/.local/bin:\$PATH"
-EOF
-      ;;
-  esac
+command -v podman >/dev/null 2>&1 || { echo "Podman is required." >&2; exit 1; }
+systemctl --user --quiet is-system-running 2>/dev/null || {
+  printf 'A user systemd session is required (loginctl enable-linger %s).\n' "$USER" >&2
+  exit 1
 }
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --skip-setup) RUN_SETUP=0 ;;
-    --help|-h) usage; exit 0 ;;
-    *) echo "error: unknown option: $1" >&2; usage >&2; exit 1 ;;
-  esac
-  shift
+# Rootless subuid/subgid range for nested PinP containers.
+if ! grep -qE "^${USER}:[0-9]+:[0-9]+" /etc/subuid 2>/dev/null; then
+  cat <<'EOF' >&2
+PinP needs subordinate uid/gid ranges to run nested rootless containers.
+Run as root once:
+    usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $USER
+then log out and back in.
+EOF
+  exit 1
+fi
+
+mkdir -p "$SYSTEMD_DIR"
+cp "$ROOT_DIR"/systemd/*.pod "$ROOT_DIR"/systemd/*.container "$ROOT_DIR"/systemd/*.volume "$SYSTEMD_DIR"/
+
+echo "Building control-plane image..."
+podman build \
+  --build-arg "SHELLCHECK_VERSION=${SHELLCHECK_VERSION:-0.10.0}" \
+  --build-arg "AI_MEMORY_VERSION=${AI_MEMORY_VERSION:-2.6.3}" \
+  -t localhost/vibepod-homelab/control-plane:latest -f "$ROOT_DIR/Containerfile" "$ROOT_DIR"
+
+echo "Building PinP image..."
+podman build -t localhost/vibepod-homelab/pinp:latest -f "$ROOT_DIR/docker/pinp/Containerfile" "$ROOT_DIR/docker/pinp"
+
+echo "Building ai-memory image..."
+podman build \
+  --build-arg "AI_MEMORY_VERSION=${AI_MEMORY_VERSION:-2.6.3}" \
+  -t localhost/vibepod-homelab/ai-memory:latest -f "$ROOT_DIR/docker/ai-memory/Containerfile" "$ROOT_DIR/docker/ai-memory"
+
+# ai-memory runtime overrides, read by the quadlet's EnvironmentFile=. Always
+# written (even empty) so the unit has a file to read after a fresh install.
+mkdir -p "$AI_ENV_DIR"
+( umask 077; cat > "$AI_ENV_FILE" <<EOF
+AI_MEMORY_AUTH_TOKEN=${AI_MEMORY_AUTH_TOKEN:-}
+AI_MEMORY_LLM_PROVIDER=${AI_MEMORY_LLM_PROVIDER:-}
+AI_MEMORY_ALLOWED_HOSTS=${AI_MEMORY_ALLOWED_HOSTS:-localhost,127.0.0.1,host.containers.internal}
+EOF
+)
+
+systemctl --user daemon-reload
+
+for unit in init.service pinp.service vibepod.service ai-memory.service vibepod-pod.service; do
+  systemctl --user enable --now "$unit"
 done
 
-command -v docker >/dev/null 2>&1 || {
-  echo "Docker is required." >&2
-  exit 1
-}
-
-docker compose version >/dev/null 2>&1 || {
-  echo "Docker Compose v2 is required (the 'docker compose' command)." >&2
-  exit 1
-}
-
-engine_version="$(docker version --format '{{.Server.Version}}' 2>/dev/null || true)"
-engine_major="${engine_version%%.*}"
-if [[ -z "$engine_version" || ! "$engine_major" =~ ^[0-9]+$ || "$engine_major" -lt 26 ]]; then
-  echo "Docker Engine 26 or newer is required for the isolated workspace subpath mounts." >&2
-  echo "Detected server version: ${engine_version:-unavailable}" >&2
-  exit 1
-fi
-
-# Validate the Compose model early. This catches hosts whose Compose version does
-# not understand the volume.subpath syntax used to expose only project/worktree
-# directories to DinD.
-if ! docker compose --project-directory "$ROOT_DIR" -f "$ROOT_DIR/compose.yaml" config -q; then
-  echo "The installed Docker Compose version cannot validate this stack." >&2
-  echo "Upgrade Docker Compose and retry." >&2
-  exit 1
-fi
-
+# Install the `vph` launcher.
 mkdir -p "$BIN_DIR" "$CONFIG_DIR"
+printf 'VIBEPOD_HOMELAB_DIR=%q\n' "$ROOT_DIR" > "$CONFIG_FILE"
+install -m 0755 "$ROOT_DIR/bin/vph" "$BIN_DIR/vph"
+ln -sfn "$BIN_DIR/vph" "$BIN_DIR/vibepod-homelab"
 
-# Keep the global command independent from the caller's current directory.
-# The config file points back to the checkout that owns compose.yaml and scripts/.
-printf 'FIRSTMATE_HOMELAB_DIR=%q\n' "$ROOT_DIR" > "$CONFIG_FILE"
+cat <<'EOF'
 
-install -m 0755 "$ROOT_DIR/bin/fmh" "$BIN_DIR/fmh"
-ln -sfn "$BIN_DIR/fmh" "$BIN_DIR/firstmate-homelab"
+VibePod Homelab installed. Persistent volumes, the pod and the control plane
+are running. Next:
+  ./scripts/setup.sh      # build the Pi agent image into PinP + wire ai-memory
+  ./scripts/login.sh      # authenticate agents (Pi/Claude) + GitHub CLI
+  ./scripts/doctor.sh     # verify the stack
+  ./scripts/connect.sh    # open a Herdr multiplexer session
 
-if [[ $RUN_SETUP -eq 1 ]]; then
-  "$ROOT_DIR/scripts/setup.sh"
-fi
-
-cat <<EOF
-
-Firstmate Homelab launcher installed.
-
-Commands:
-  fmh doctor
-  fmh login
-  fmh connect
-  fmh help
-
-Long name:
-  firstmate-homelab <command>
-
-Installation directory:
-  $ROOT_DIR
 EOF
-
-case ":${PATH}:" in
-  *":${BIN_DIR}:"*) ;;
-  *) print_path_instructions ;;
-esac

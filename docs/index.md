@@ -1,15 +1,14 @@
 <div align="center" markdown>
 
-<img src="assets/firstmate-homelab-logo.svg" alt="Firstmate Homelab" width="360" />
+<img src="assets/firstmate-homelab-logo.svg" alt="VibePod Homelab" width="360" />
 
-# Firstmate Homelab
+# VibePod Homelab
 
-Self-hosted development environment for **Firstmate + Herdr + Codex CLI**.
-
-Keep the agent runtime, Git worktrees, GitHub credentials and project Docker workloads on your homelab, while giving agents an isolated Docker development environment.
+Self-hosted **VibePod** agent platform running **Pi-Bolt**, **Claude Code** and **ZCode** in a rootless Podman-in-Podman pod.
 
 [Get started](getting-started/installation.md){ .md-button .md-button--primary }
-[CLI reference](reference/cli.md){ .md-button }
+[Architecture](concepts/architecture.md){ .md-button }
+[Deployment](reference/deployment.md){ .md-button }
 
 </div>
 
@@ -17,45 +16,40 @@ Keep the agent runtime, Git worktrees, GitHub credentials and project Docker wor
 
 ```mermaid
 flowchart LR
-    DEV[Developer] -->|SSH + fmh| FM[Firstmate<br/>Herdr + Codex]
-    FM -->|Docker over TLS| DIND[Isolated DinD<br/>Docker daemon]
-    DIND --> APPS[Project containers]
-
-    HOME[(firstmate-home<br/>state + projects)] --> FM
-    HOME --> DIND
-    DATA[(dind-data<br/>images + volumes)] --> DIND
+    DEV[Developer] -->|SSH + vph| VP[vibepod<br/>VibePod CLI + Herdr + Fish]
+    VP -->|podman socket| PINP[pinp<br/>Podman-in-Podman]
+    PINP --> AGENTS[agent containers<br/>Pi-Bolt · Claude Code · ZCode]
+    MEM[(ai-memory)] --> AGENTS
 ```
 
-The important boundary is simple: agents get a real Docker development environment, but they **do not receive the physical homelab Docker socket**. Docker commands from Firstmate target a dedicated Docker-in-Docker daemon.
+The boundary is simple: agents get a real container runtime, but **not the host Podman/Docker socket**. VibePod (`vp`) manages the agents; the inner Podman (**PinP**) is the only runtime they can see.
 
 ## Explore the documentation
 
-- [Installation](getting-started/installation.md) — install and bootstrap the stack.
-- [Docker development](guides/docker-development.md) — project containers, networking and bind mounts.
-- [Developer shell](guides/developer-shell.md) — Fish and the included terminal tooling.
-- [CLI reference](reference/cli.md) — all `fmh` commands and lifecycle operations.
-- [Architecture](concepts/architecture.md) — runtime, persistence and isolation model.
-- [Security](concepts/security.md) — trust boundary and DinD limitations.
+- [Installation](getting-started/installation.md) — deploy the rootless quadlets and bootstrap.
+- [Architecture](concepts/architecture.md) — pod topology, PinP, persistence, networking.
+- [Security](concepts/security.md) — trust boundary and PinP limitations.
+- [PinP development](guides/pinp-development.md) — building and running project containers.
+- [Developer shell](guides/developer-shell.md) — Fish and the included tooling.
+- [CLI reference](reference/cli.md) — every `vph` command.
+- [Deployment](reference/deployment.md) — rootless prerequisites, subuid/subgid, pasta, ai-memory and board wiring.
 
 ## Typical workflow
 
 ```bash
 ssh homelab
-fmh connect
+vph connect          # Herdr multiplexer
 ```
 
-Or open the developer shell directly:
+Inside a pane:
 
 ```bash
-fmh shell
+vp run pi            # Pi-Bolt — the default agent
 ```
 
-Inside Firstmate, Docker behaves like a normal development workstation:
+Docker-style work inside an agent targets PinP, never the host runtime:
 
 ```bash
-docker version
-docker build .
-docker compose up --build
+podman build .
+podman run --rm ...
 ```
-
-Those commands target the isolated DinD daemon, not the Docker daemon that manages the rest of the homelab.

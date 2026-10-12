@@ -1,35 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT_DIR"
+# Authenticate the agents and the GitHub CLI inside the control plane.
+# Pi/Claude auth is done through the agent itself (Pi: /login in the TUI;
+# Claude: `claude` then the login flow). GitHub CLI is shared by agents for
+# commits, so it is authenticated once here.
 
-docker compose up -d
+podman exec -it vibepod fish -c '
+  echo "== GitHub CLI =="
+  if gh auth status >/dev/null 2>&1; then
+    echo "GitHub CLI already authenticated."
+  else
+    gh auth login
+    gh auth setup-git
+  end
 
-bash "$ROOT_DIR/scripts/ensure-herdr.sh"
-
-if docker compose exec -T firstmate codex login status >/dev/null 2>&1; then
-  echo "Codex is already authenticated."
-else
-  echo "Starting Codex device-code authentication..."
-  docker compose exec -it firstmate codex login --device-auth
-fi
-
-if docker compose exec -T firstmate gh auth status >/dev/null 2>&1; then
-  echo "GitHub CLI is already authenticated."
-else
-  echo "Starting GitHub CLI authentication..."
-  docker compose exec -it firstmate gh auth login
-fi
-
-docker compose exec -T firstmate gh auth setup-git
-
-docker compose exec -T firstmate bash -lc '
-  set -euo pipefail
-  export PATH="$HOME/.local/bin:$PATH"
-  herdr integration install codex
+  echo
+  echo "== Agents =="
+  echo "Start an agent and authenticate in its TUI:"
+  echo "  vp run pi        # Pi-Bolt  -> run /login"
+  echo "  vp run claude    # Claude Code -> /login"
 '
-
-echo
-echo "Authentication complete."
-echo "Run 'fmh doctor' to verify the complete stack."

@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT_DIR"
-
-docker compose up -d >/dev/null
-
-bash "$ROOT_DIR/scripts/ensure-herdr.sh"
-
-exec docker compose exec -it firstmate bash -lc '
-  export PATH="$HOME/.local/bin:$PATH"
-  cd /opt/firstmate
-  exec herdr --session "${HERDR_SESSION:-firstmate}"
-'
+# Open an interactive Fish shell in the control plane, then a Herdr session
+# for multiplexed agent panes (run `vp run pi` inside a pane).
+podman exec -it vibepod fish -c 'exec herdr'

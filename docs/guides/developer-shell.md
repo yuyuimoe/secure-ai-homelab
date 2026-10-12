@@ -1,80 +1,45 @@
 # Developer shell
 
-Firstmate Homelab keeps the stable `node:24-bookworm-slim` base image and layers a curated terminal environment on top.
-
-The goal is not to reproduce a full desktop distribution inside Docker. It is to provide a comfortable, predictable environment for long development sessions.
+The control plane keeps a curated terminal environment on top of a Wolfi base. It is *not* a full desktop distribution — it is a comfortable, predictable environment for long sessions.
 
 ## Open the shell
 
 ```bash
-fmh shell
+vph shell
+# or: podman exec -it vibepod fish
 ```
-
-This opens **Fish** inside the Firstmate container. Bash remains installed and is used explicitly by project scripts and automation.
 
 ## Fish defaults
 
-The image ships its reproducible configuration under:
+The image ships a reproducible configuration at `/etc/fish/conf.d/vibepod.fish`, applied only to interactive sessions:
 
-```text
-/etc/fish/conf.d/firstmate.fish
-```
-
-It is applied only to interactive Fish sessions and includes:
-
-- Fish syntax highlighting and autosuggestions;
 - a compact prompt with Git branch information;
 - `zoxide` directory jumping;
 - `fzf` defaults;
-- aliases for Debian's `batcat` and `fdfind`;
-- modern `ls`, `ll` and `tree` output through `exa`;
-- small Git aliases;
-- directory shortcuts such as `..`, `...` and `....`.
+- modern `ls` / `ll` / `tree` through `eza`;
+- small Git aliases and directory shortcuts.
 
-The project deliberately avoids a large plugin manager so the interactive environment remains reproducible from the image.
+Wolfi names tools the same as Alpine, so no `batcat`/`fdfind` aliases are needed (unlike the old Debian base).
 
 ## Included toolbox
 
 | Area | Tools |
 | --- | --- |
 | Shell / navigation | `fish`, `fzf`, `zoxide`, `direnv` |
-| Files / search | `exa`, `bat`, `fd`, `ripgrep`, `tree`, `less` |
-| Processes / resources | `btop`, `htop`, `ncdu`, `procps`, `lsof` |
-| Networking | `curl`, `dnsutils`, `iproute2`, `ping`, `netcat`, `socat`, `ssh` |
-| Development | `git`, `gh`, `git-lfs`, `jq`, `make`, `shellcheck`, Python, Node, Docker CLI |
+| Files / search | `eza`, `bat`, `fd`, `ripgrep`, `tree`, `less` |
+| Processes / resources | `btop`, `htop`, `procps`, `lsof` |
+| Networking | `curl`, `bind-tools`, `iproute2`, `ping`, `netcat`, `socat`, `ssh` |
+| Development | `git`, `gh`, `git-lfs`, `jq`, `make`, `shellcheck`, Python, Bun, `podman` |
+| Agents / runtime | `vp` (VibePod), `herdr`, `ai-memory` |
 
-Debian installs two commands under different executable names to avoid package conflicts:
+## Why Wolfi instead of Debian?
 
-```text
-batcat  -> exposed as `bat` in interactive Fish
-fdfind  -> exposed as `fd` in interactive Fish
-```
+Wolfi gives glibc (so `pi-bolt` and Claude Code's native binaries run) with apk packaging (Alpine-small). That is the combination musl/Alpine cannot provide for native agent binaries. See [Architecture](../concepts/architecture.md) for how the agent images themselves are built.
 
 ## Rebuild after image changes
 
-Changes to the developer shell live in the Firstmate image. Apply them with:
-
 ```bash
-fmh update
+vph update
 ```
 
-or during setup:
-
-```bash
-fmh setup
-```
-
-The persistent `/home/node` volume is kept across rebuilds.
-
-## Why Debian instead of a rolling base?
-
-Using an Arch-derived container would provide newer packages, but it would also increase runtime volatility and diverge from the upstream Node image.
-
-Debian gives this project a useful balance:
-
-- predictable image builds;
-- broad package availability;
-- upstream Node compatibility;
-- lower maintenance churn.
-
-The interactive layer can still feel modern without coupling the runtime to a rolling-release base.
+The persistent volumes are kept across rebuilds.

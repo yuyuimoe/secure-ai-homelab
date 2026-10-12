@@ -1,0 +1,38 @@
+# VibePod control plane — the long-lived developer + agent-runner environment.
+# You attach with `podman exec -it vibepod fish` and run `vp run pi` (or
+# `vp run claude` / `vp run zcode`) inside a herdr pane for multiplexing.
+
+[Container]
+Image=localhost/vibepod-homelab/control-plane:latest
+ContainerName=vibepod
+Pod=vibepod.pod
+
+UserNS=keep-id
+User=1000
+Group=1000
+
+Volume=vibepod-config.volume:/home/developer/.config/vibepod
+Volume=workspaces.volume:/home/developer/workspaces
+# Read-only: only PinP writes the socket.
+Volume=pinp-socket.volume:/run/podman:ro
+
+# PinP's socket lives at podman's default path; VibePod auto-detects it (no
+# DOCKER_HOST set). CONTAINER_HOST is the podman-native equivalent and is kept
+# only as a belt-and-suspenders hint.
+Environment=CONTAINER_HOST=unix:///run/podman/podman.sock
+Environment=HOME=/home/developer
+Environment=VP_DEFAULT_AGENT=pi
+
+# VibePod board (optional; set VP_BOARD_URL/TOKEN in the volume's config.yaml
+# or via `vp` — see docs/reference/deployment.md).
+# Environment=VP_BOARD_URL=http://localhost:3000
+
+[Unit]
+After=pinp.service
+Requires=pinp.service
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

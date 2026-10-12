@@ -1,0 +1,14 @@
+# VibePod Homelab — rootless pod (Podman quadlet).
+#
+# Deploy to ~/.config/containers/systemd/vibepod.pod, then `systemctl --user
+# daemon-reload`. Rootless + pasta: no root, no slirp4netns. The pod shares one
+# network namespace, so the control plane reaches ai-memory and inner-agent
+# ports at localhost just like the old DinD shared-namespace design.
+#
+# Install the units with scripts/install.sh (copies this directory into place).
+
+[Pod]
+PodName=vibepod-homelab
+
+[Install]
+WantedBy=default.target

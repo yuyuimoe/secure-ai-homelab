@@ -1,102 +1,71 @@
 # Security
 
-Firstmate Homelab runs autonomous coding agents with shell, GitHub and Docker capabilities. Treat it as a powerful development workstation, not as an untrusted sandbox.
+VibePod Homelab runs autonomous coding agents with shell, GitHub and container capabilities. Treat it as a powerful development workstation, not as an untrusted sandbox.
 
 ## Current protections
 
-- the agent-facing `firstmate` container runs as the unprivileged `node` user;
-- no ordinary host directory is mounted by default;
-- the physical host Docker socket is never mounted into Firstmate;
-- project Docker workloads run on a dedicated DinD daemon;
-- the Docker API is not published as a physical host port and uses TLS;
+- the pod and all containers run **rootless** (no host root, no daemon socket mounted);
+- the host Podman/Docker socket is never mounted into the control plane or agents;
+- agent and project containers run on a dedicated inner Podman (PinP);
+- PinP is isolated in its own user namespace (`SYS_ADMIN` is granted *within* the userns, not on the host);
 - project ports are not automatically published on the physical host;
-- `no-new-privileges` remains enabled on the Firstmate container;
-- persistent secrets and state live in Docker volumes instead of the Git repository.
+- persistent secrets and state live in named volumes, not the Git repository;
+- `ai-memory` binds loopback on the host and is reachable from agents only through the pod network.
 
 ## Sensitive data
 
-The persistent Firstmate home can contain:
+Persistent volumes can contain:
 
-- Codex authentication data;
-- GitHub CLI credentials;
-- source code cloned into `~/.firstmate/projects`;
-- Treehouse worktrees under `~/.treehouse`;
-- agent transcripts and Firstmate operational state;
-- SSH material if you explicitly add it later.
+- VibePod agent credentials and profiles (`vibepod-config`);
+- ai-memory's memory wiki — prompts, tool calls, decisions (`ai-memory-data`);
+- source code (`workspaces`);
+- agent-created images, containers and inner volumes (`pinp-data`).
 
-Treat backups or exports of that volume as sensitive.
+Treat backups or exports of these volumes as sensitive.
 
-Never commit `.env`, Codex auth files, GitHub tokens, SSH private keys or copies of persistent volumes.
+Never commit `.env`, agent auth files, GitHub tokens, SSH private keys, or copies of persistent volumes.
 
-## Host Docker socket
+## Host socket
 
-Do not add this mount to `compose.yaml`:
+Do not mount these into the pod or the agent image:
 
 ```yaml
-- /var/run/docker.sock:/var/run/docker.sock
+# /run/user/$UID/podman/podman.sock
+# /var/run/docker.sock
 ```
 
-A process controlling the host Docker daemon can normally mount host paths and effectively gain root-level control of the machine.
+A process controlling the host container runtime can mount host paths and effectively gain root-level control of the machine. VibePod Homelab deliberately targets the isolated PinP daemon instead.
 
-Firstmate Homelab deliberately uses an isolated `docker:dind` daemon instead. The Docker CLI inside Firstmate is configured to talk only to that daemon.
+## What PinP can see
 
-## What DinD can see
-
-DinD receives its own `/var/lib/docker` volume and only the code-bearing Firstmate paths required for project bind mounts:
+PinP receives its own `pinp-data` volume and only the code-bearing paths VibePod needs for agent bind mounts:
 
 ```text
-/home/node/.firstmate/projects
-/home/node/.treehouse
+/home/developer/.config/vibepod   (agent config dirs)
+/home/developer/workspaces        (project source)
 ```
 
-The normal Codex and GitHub credential paths are not exposed to DinD through ordinary workspace mounts.
+The host container runtime, host filesystem and unrelated homelab workloads are not visible to PinP.
 
-This separation keeps agent-created images, containers, networks and inner volumes away from normal homelab Docker workloads.
+## PinP privilege limitation
 
-## DinD privilege limitation
-
-Classic Docker-in-Docker requires the DinD service to run with:
-
-```yaml
-privileged: true
-```
-
-That is a materially stronger privilege level than the Firstmate application container. DinD therefore **must not be considered a hard security boundary against the physical Linux kernel**.
+Podman-in-Podman grants `CAP_SYS_ADMIN` *inside the pod's user namespace* so the inner podman can create nested user namespaces. That is a materially stronger capability than an ordinary application container, so **PinP must not be considered a hard security boundary against the Linux kernel**.
 
 The isolation goal is narrower:
 
-- do not hand agents the existing homelab Docker daemon;
-- isolate project Docker resources from normal homelab workloads;
+- do not hand agents the host container runtime;
+- isolate agent/project container resources from normal homelab workloads;
 - avoid arbitrary host-directory mounts;
-- limit normal persistent-home visibility to project and worktree paths.
+- limit persistent-volume visibility to the config and workspace paths.
 
-If you need strong isolation from the homelab kernel itself, run the entire Firstmate Homelab stack inside a dedicated VM and treat that VM as disposable.
+If you need strong isolation from the homelab kernel itself, run the whole pod inside a dedicated VM and treat that VM as disposable.
 
-## Docker API
+## ai-memory
 
-The official DinD image generates TLS material. Firstmate connects to:
-
-```text
-tcp://localhost:2376
-```
-
-with read-only client certificates. No Docker API port is published on the physical host.
-
-## Persistent Docker state
-
-The `dind-data` volume may contain sensitive development state too:
-
-- project images and build layers;
-- BuildKit cache;
-- project containers;
-- inner Docker volumes containing databases or application secrets.
-
-A normal `fmh uninstall` keeps this data. `fmh uninstall --purge` deletes it together with the Firstmate home and DinD certificate volumes.
+ai-memory stores agent prompts, tool calls and consolidated memory. It is a server you run: set `AI_MEMORY_AUTH_TOKEN` and `AI_MEMORY_ALLOWED_HOSTS` before exposing it beyond loopback. Bearer auth does not encrypt traffic — put TLS in front (Caddy/Cloudflare templates ship with ai-memory) for LAN or remote access. See [Deployment](../reference/deployment.md).
 
 ## Supply chain
 
-The image tracks configurable upstream versions for Docker, Firstmate and Codex. Herdr and helper tools are installed through their upstream installation/bootstrap mechanisms.
-
-For a more reproducible deployment, pin reviewed versions and update them deliberately.
+The control-plane, PinP and ai-memory images track configurable upstream versions (Wolfi bun, podman, VibePod, Herdr, ai-memory, pi-bolt, Claude Code channel, ZCode). `ai-memory` is built locally from the upstream release tarball (pinned via `AI_MEMORY_VERSION`) on a `chainguard/wolfi-base` runtime rather than pulled from Docker Hub. For a more reproducible deployment, pin reviewed versions and update them deliberately.
 
 See [Architecture](architecture.md) for the complete runtime model.

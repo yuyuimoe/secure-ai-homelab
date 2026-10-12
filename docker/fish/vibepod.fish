@@ -1,17 +1,10 @@
-# Firstmate Homelab interactive Fish configuration.
-# This file lives in the image so the defaults remain reproducible across rebuilds.
+# VibePod Homelab interactive Fish configuration.
+# Lives in the control-plane image so the defaults stay reproducible.
+# Wolfi names: eza (not exa), bat (not batcat), fd (not fd-find) — no aliases needed.
 
 if status is-interactive
     # Keep user-installed tools first.
     fish_add_path -g $HOME/.local/bin
-
-    # Debian ships bat/fd with names that avoid collisions. Prefer the ergonomic names.
-    if command -q batcat
-        alias bat='batcat'
-    end
-    if command -q fdfind
-        alias fd='fdfind'
-    end
 
     # Safer, more useful defaults.
     alias ll='ls -lah --group-directories-first'
@@ -22,12 +15,11 @@ if status is-interactive
     alias ...='cd ../..'
     alias ....='cd ../../..'
 
-    # Prefer modern directory listings when available while leaving /bin/ls untouched
-    # for scripts and compatibility.
-    if command -q exa
-        alias ls='exa --group-directories-first --icons'
-        alias ll='exa -lah --group-directories-first --git --icons'
-        alias tree='exa --tree --group-directories-first --icons'
+    # Prefer modern directory listings while leaving /bin/ls untouched.
+    if command -q eza
+        alias ls='eza --group-directories-first --icons'
+        alias ll='eza -lah --group-directories-first --git --icons'
+        alias tree='eza --tree --group-directories-first --icons'
     end
 
     # Git shortcuts kept intentionally small and unsurprising.
@@ -68,6 +60,5 @@ if status is-interactive
         end
     end
 
-    # Disable the default greeting; the prompt should stay clean for long sessions.
     set -g fish_greeting
 end
