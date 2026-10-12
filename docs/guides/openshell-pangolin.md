@@ -279,6 +279,39 @@ scopes_claim     = ""
 # IdP serves JWKS from another origin.
 ```
 
+!!! warning "On the apt/systemd install, `server_sans` does not set the certificate"
+    The Debian/RPM unit generates the PKI with
+    `ExecStartPre=generate-certs --server-san host.openshell.internal`. In
+    OpenShell 0.1.3 the `server_sans` field in `gateway.toml` is **not** consulted
+    for the certificate, so adding it there has no effect. Override the pre-step
+    with a drop-in and regenerate:
+
+    ```ini
+    # ~/.config/systemd/user/openshell-gateway.service.d/server-sans.conf
+    [Service]
+    ExecStartPre=
+    ExecStartPre=/usr/bin/openshell-gateway config preflight
+    ExecStartPre=/usr/bin/openshell-gateway generate-certs --output-dir ${OPENSHELL_LOCAL_TLS_DIR} --server-san host.openshell.internal --server-san <alias> --server-san <endpoint-host>
+    ```
+
+    ```bash
+    systemctl --user daemon-reload
+    rm -rf ~/.local/state/openshell/tls   # the WHOLE dir; a leftover jwt/ => "partial PKI state"
+    systemctl --user restart openshell-gateway
+    openssl x509 -in ~/.local/state/openshell/tls/server/tls.crt -noout -ext subjectAltName
+    ```
+
+    Regenerating replaces the CA and the client certificates, so every client
+    must re-trust the new CA (Part 4.2) and any old mTLS bundle is dead (Part 5).
+
+!!! note "Role names must match exactly"
+    `admin_role` / `user_role` (and the Rauthy roles they name) must be
+    `openshell-admin` / `openshell-user`, with hyphens. An mTLS client is always
+    assigned the hardcoded `openshell-user`, so a config that expects
+    `openshell_user` leaves the break-glass certificate unauthorized with
+    `role 'openshell_user' required`, even though `openshell whoami` shows
+    `Roles: openshell-user`.
+
 ### 2.2 Keep mTLS as break-glass
 
 With an OIDC issuer configured, mTLS user authentication defaults **off**. Force
@@ -318,8 +351,12 @@ openshell gateway list
 openshell status
 ```
 
-Because the SAN set changed, `~/.local/state/openshell/tls/` is regenerated. Any
-machine that already had the old mTLS bundle must be re-enrolled (Part 5).
+Because the SAN set changed, `~/.local/state/openshell/tls/` is regenerated (new
+CA, new server and client certificates). Any machine that already had the old
+mTLS bundle must be re-enrolled (Part 5), and OIDC clients must re-trust the new
+CA (Part 4.2). The gateway host's own `local` registration caches the CA under
+`~/.config/openshell/gateways/local/mtls/`, so refresh it too or it fails with
+`invalid peer certificate: BadSignature`.
 
 !!! note "The first identity needs workspace membership"
     A freshly authenticated principal is not a member of the `default`
@@ -397,6 +434,34 @@ openshell whoami
 openshell sandbox create --name smoke -- echo alive!
 openshell sandbox delete smoke
 ```
+
+!!! warning "The CLI does not trust the gateway's self-signed CA"
+    For an **OIDC** gateway the CLI verifies the server with the *system* trust
+    store (it reads `SSL_CERT_FILE` / `SSL_CERT_DIR`); a per-gateway
+    `~/.config/openshell/gateways/<name>/mtls/ca.crt` is only used for mTLS
+    registrations. `gateway add` reports "Authenticated successfully" because the
+    token exchange is with the IdP — the first gateway call (`whoami`) then fails
+    with `invalid peer certificate: UnknownIssuer`.
+
+    Copy the gateway's `~/.local/state/openshell/tls/ca.crt` to each client and
+    trust it:
+
+    ```bash
+    sudo cp openshell-ca.crt /usr/local/share/ca-certificates/openshell-gateway.crt
+    sudo update-ca-certificates
+    ```
+
+    Without root, point the CLI at a bundle that also contains the system CAs
+    (`SSL_CERT_FILE` *replaces* the bundle, it does not add to it):
+
+    ```bash
+    cat /etc/ssl/certs/ca-certificates.crt openshell-ca.crt > ~/.config/openshell/ca-bundle.crt
+    export SSL_CERT_FILE=~/.config/openshell/ca-bundle.crt   # scope to the shell
+    ```
+
+    A certificate that is trusted but missing the endpoint name fails
+    differently (`certificate is valid for ...`); both fixes are needed — the
+    name goes in the server's SAN set (Part 2.1), the CA on every client.
 
 ## Part 5 — Break-glass mTLS certificates
 
@@ -534,11 +599,15 @@ the real key at the endpoint. Claude Code and ZCode are installed alongside Pi.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `x509: certificate is valid for ...` on connect | Alias missing from the server certificate | Add `<alias>` to `server_sans`, restart, re-enroll bundles |
+| `x509: certificate is valid for ...` on connect | Endpoint name missing from the server certificate | Add it via `generate-certs --server-san` (Part 2.1), regenerate, re-enroll bundles |
+| `invalid peer certificate: UnknownIssuer` | CLI does not trust the gateway's self-signed CA | Trust `~/.local/state/openshell/tls/ca.crt` on the client (system store or `SSL_CERT_FILE`, Part 4.2) |
+| `invalid peer certificate: BadSignature` after a SAN change | Cached old CA in `~/.config/openshell/gateways/<name>/mtls/` | Refresh `ca.crt`/`tls.crt`/`tls.key` from `~/.local/state/openshell/tls/` (Part 2.3) |
+| `partial PKI state in ...: some files exist but not all` | Only part of `~/.local/state/openshell/tls` was removed | `rm -rf` the whole `tls` dir (it includes `jwt/`) and restart |
+| `role 'openshell_user' required` with an mTLS client | Config roles use underscores, but mTLS is hardcoded to `openshell-user` | Use `openshell-admin`/`openshell-user` in Rauthy and the gateway config (Part 2.1) |
 | Login redirect fails | Redirect URI not registered | Register `http://127.0.0.1/callback` (port-less) with `RFC_8252_ENABLE=true` |
 | `Authentication: Failed` / browser opens but no roles | Roles claim empty | Confirm `roles_claim = "roles"` and that the user has `openshell-admin` or `openshell-user` |
 | Gateway cannot reach the IdP | Issuer not HTTPS or not reachable from the VPS | `curl https://<idp>/auth/v1/.well-known/openid-configuration` from the VPS |
-| Everyone loses access after a SAN change | Local PKI regenerated | Re-copy the new client bundle / re-run `gateway add` |
+| Everyone loses access after a SAN change | Local PKI regenerated (new CA) | Re-copy the new client bundle / re-run `gateway add`, and re-trust the CA (Part 4.2) |
 | Tunnel connects, nothing answers | Newt cannot reach the gateway | Check `systemctl status newt` and that the resource targets port `17670` |
 | `gateway config preflight failed: category=malformed` | Bad key or value in `gateway.toml` | Run `openshell-gateway config preflight --path ~/.config/openshell/gateway.toml`; check for `compute_drive` (needs `compute_driver`) |
 | Login fails with an issuer mismatch | `issuer` missing its trailing slash | Use `https://<idp>/auth/v1/` exactly |
