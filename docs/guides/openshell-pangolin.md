@@ -239,10 +239,14 @@ On the VPS, edit `~/.config/openshell/gateway.toml`.
 
 ```toml
 [openshell.gateway]
-# Keep the package default listener and driver
+# Keep the package default listener and driver.
+# NOTE: the key is `compute_driver` (singular). `compute_drive` or
+# `compute_drivers` makes the gateway refuse the file as malformed.
 server_sans = ["<alias>", "openshell", "*.dev.openshell.localhost", "127.0.0.1", "localhost"]
 
 [openshell.gateway.oidc]
+# Trailing slash is required: it is part of Rauthy's issuer identifier and of
+# the discovery URL.
 issuer           = "https://<idp>/auth/v1/"
 audience         = "openshell-cli"
 roles_claim      = "roles"
@@ -269,6 +273,9 @@ under `~/.local/state/openshell/tls/ca.crt` is used automatically.
 ### 2.3 Restart and verify
 
 ```bash
+# Validate the file before restarting; the systemd unit runs the same check.
+openshell-gateway config preflight --path ~/.config/openshell/gateway.toml
+
 systemctl --user restart openshell-gateway
 journalctl --user -u openshell-gateway -n 50 --no-pager
 openshell gateway list
@@ -381,6 +388,8 @@ local PKI, or by minting short-lived certificates. Track serial numbers with
 | Gateway cannot reach the IdP | Issuer not HTTPS or not reachable from the VPS | `curl https://<idp>/auth/v1/.well-known/openid-configuration` from the VPS |
 | Everyone loses access after a SAN change | Local PKI regenerated | Re-copy the new client bundle / re-run `gateway add` |
 | Tunnel connects, nothing answers | Newt cannot reach the gateway | Check `systemctl status newt` and that the resource targets port `17670` |
+| `gateway config preflight failed: category=malformed` | Bad key or value in `gateway.toml` | Run `openshell-gateway config preflight --path ~/.config/openshell/gateway.toml`; check for `compute_drive` (needs `compute_driver`) |
+| Login fails with an issuer mismatch | `issuer` missing its trailing slash | Use `https://<idp>/auth/v1/` exactly |
 
 ## Security notes
 
