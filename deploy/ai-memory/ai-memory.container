@@ -1,0 +1,31 @@
+# ai-memory — long-term memory server for OpenShell sandboxes.
+#
+# Standalone rootless Podman quadlet (NOT in the VibePod pod). Agents in
+# OpenShell sandboxes reach it through the supervisor at
+# http://host.openshell.internal:49374. Install with scripts/install-ai-memory.sh.
+
+[Container]
+# Built locally from docker/ai-memory/Containerfile (Wolfi base + upstream
+# release binary) so the stack stays self-hosted.
+Image=localhost/secure-ai-homelab/ai-memory:latest
+ContainerName=ai-memory
+
+# The image runs as uid/gid 1000; keep-id so the named volume is host-owned.
+UserNS=keep-id
+User=1000
+Group=1000
+
+Volume=ai-memory-data.volume:/data
+
+# Loopback only. The OpenShell supervisor is host-networked, so it reaches the
+# server on host loopback; nothing is exposed on the LAN.
+PublishPort=127.0.0.1:49374:49374
+
+Environment=RUST_LOG=ai_memory=info,ai_memory_store=info,ai_memory_wiki=info,ai_memory_mcp=info,tracing_appender=warn
+EnvironmentFile=%h/.config/secure-ai-homelab/ai-memory.env
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

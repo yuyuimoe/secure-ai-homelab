@@ -1,0 +1,7 @@
+# ai-memory data: wiki, derived index, and generated auth state (/data).
+# Fresh for the OpenShell path. Back this up; it holds the memory wiki.
+
+[Volume]
+
+[Install]
+WantedBy=default.target
