@@ -1,0 +1,28 @@
+id: ai-memory
+display_name: ai-memory
+description: Long-term memory MCP server on the gateway host
+category: data
+inference_capable: false
+
+# The per-person native ai-memory API key (aim_...). The sandbox sees only an
+# opaque placeholder in AI_MEMORY_AUTH_TOKEN; the supervisor substitutes the
+# real value only for requests to the endpoint below.
+credentials:
+  - name: ai_memory_token
+    description: ai-memory native API key for this person
+    env_vars: [AI_MEMORY_AUTH_TOKEN]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+
+endpoints:
+  - host: host.openshell.internal
+    port: 49374
+    protocol: rest
+    access: full
+    enforcement: enforce
+
+# Binaries allowed to use this credential at the endpoint. Scope this to the
+# real MCP client; /usr/bin/curl is here for the smoke test.
+binaries:
+  - /usr/bin/curl

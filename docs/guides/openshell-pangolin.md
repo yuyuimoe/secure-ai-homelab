@@ -378,6 +378,62 @@ Revoke by deleting the person's certificate in Rauthy **and** regenerating the
 local PKI, or by minting short-lived certificates. Track serial numbers with
 `openshell-user-cert.sh list`.
 
+## Part 6 — Long-term memory (ai-memory)
+
+One ai-memory instance serves every sandbox. Memory is scoped per actor
+(`auto_scope = per_actor`) and attributed, so a person's agents cannot read or
+overwrite another person's active project. Pages in the *same project* are
+shared with teammates by design; personal handoffs stay personal.
+
+### 6.1 Deploy ai-memory on the gateway host
+
+```bash
+./scripts/install-ai-memory.sh
+systemctl --user start ai-memory.service
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:49374/mcp   # 401 = auth on
+```
+
+The server binds host loopback. The OpenShell supervisor is host-networked and
+reaches it through the `host.openshell.internal` alias (which maps to
+`host_gateway_ip`, `127.0.0.1` on native Linux).
+
+!!! note "CPUs without x86-64-v2"
+    The Wolfi-based image needs x86-64-v2 (SSE4.2/POPCNT). On a v2-less host the
+    build fails with `Fatal glibc error: CPU does not support x86-64-v2`. Use the
+    upstream image instead:
+
+    ```bash
+    podman pull docker.io/akitaonrails/ai-memory:latest
+    podman tag  docker.io/akitaonrails/ai-memory:latest localhost/secure-ai-homelab/ai-memory:latest
+    ./scripts/install-ai-memory.sh --no-build
+    ```
+
+### 6.2 Give each person a key
+
+```bash
+./scripts/ai-memory-user.sh add alice
+./scripts/ai-memory-user.sh key alice      # prints an aim_... token, shown once
+```
+
+### 6.3 Authorize sandboxes
+
+```bash
+openshell profile import -f deploy/ai-memory/provider-profile.yaml
+openshell provider create --name ai-memory-alice --type ai-memory \
+  --credential AI_MEMORY_AUTH_TOKEN=aim_...
+openshell sandbox create --name mem --from <agent-image> \
+  --provider ai-memory-alice -- <agent>
+```
+
+`--credential` takes the **environment variable name** (`AI_MEMORY_AUTH_TOKEN`),
+not the profile's credential name — passing the latter fails with *"provider
+credentials are not declared by profile"*. The sandbox sees only an opaque
+placeholder; the supervisor substitutes the real key only for requests to
+`host.openshell.internal:49374`.
+
+Scope the profile's `binaries` list to the real agent/MCP client before use;
+the shipped profile lists `/usr/bin/curl` for the smoke test.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -390,6 +446,9 @@ local PKI, or by minting short-lived certificates. Track serial numbers with
 | Tunnel connects, nothing answers | Newt cannot reach the gateway | Check `systemctl status newt` and that the resource targets port `17670` |
 | `gateway config preflight failed: category=malformed` | Bad key or value in `gateway.toml` | Run `openshell-gateway config preflight --path ~/.config/openshell/gateway.toml`; check for `compute_drive` (needs `compute_driver`) |
 | Login fails with an issuer mismatch | `issuer` missing its trailing slash | Use `https://<idp>/auth/v1/` exactly |
+| Sandbox stuck in `Error`; reason mentions `getent`/`passwd database` | The gateway auto-selected the **Docker** driver (Podman socket down, Docker present) | Pin `compute_driver = "podman"` in `gateway.toml` and `systemctl --user enable --now podman.socket` |
+| `provider credentials are not declared by profile` | `--credential` used the credential name | Use the env var name, e.g. `--credential AI_MEMORY_AUTH_TOKEN=…` |
+| `Fatal glibc error: CPU does not support x86-64-v2` | Host CPU lacks x86-64-v2; the Wolfi base cannot run | Use the upstream image with `install-ai-memory.sh --no-build` |
 
 ## Security notes
 

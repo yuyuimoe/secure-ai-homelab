@@ -12,6 +12,20 @@ CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/secure-ai-homelab"
 ENV_FILE="$CONFIG_DIR/ai-memory.env"
 IMAGE="localhost/secure-ai-homelab/ai-memory:latest"
 
+# --no-build: use an already-present image instead of building the Wolfi one.
+# Needed on CPUs without x86-64-v2, where the Wolfi glibc cannot run. Tag the
+# upstream image as $IMAGE first, e.g.
+#   podman pull docker.io/akitaonrails/ai-memory:latest
+#   podman tag  docker.io/akitaonrails/ai-memory:latest $IMAGE
+NO_BUILD=0
+for arg in "$@"; do
+  case "$arg" in
+    --no-build) NO_BUILD=1 ;;
+    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    *) echo "unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
+
 # Reuse AI_MEMORY_VERSION from the repo .env if present.
 if [[ -f $ROOT_DIR/.env ]]; then
   # shellcheck disable=SC1091
@@ -31,10 +45,20 @@ if ! systemctl --user show-environment >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Building ai-memory $AI_MEMORY_VERSION..."
-podman build \
-  --build-arg "AI_MEMORY_VERSION=$AI_MEMORY_VERSION" \
-  -t "$IMAGE" -f "$ROOT_DIR/docker/ai-memory/Containerfile" "$ROOT_DIR/docker/ai-memory"
+if [[ $NO_BUILD == 1 ]]; then
+  podman image exists "$IMAGE" || {
+    echo "error: --no-build given but image '$IMAGE' is not present." >&2
+    echo "  podman pull docker.io/akitaonrails/ai-memory:latest" >&2
+    echo "  podman tag  docker.io/akitaonrails/ai-memory:latest $IMAGE" >&2
+    exit 1
+  }
+  echo "Using existing image $IMAGE (--no-build)."
+else
+  echo "Building ai-memory $AI_MEMORY_VERSION..."
+  podman build \
+    --build-arg "AI_MEMORY_VERSION=$AI_MEMORY_VERSION" \
+    -t "$IMAGE" -f "$ROOT_DIR/docker/ai-memory/Containerfile" "$ROOT_DIR/docker/ai-memory"
+fi
 
 mkdir -p "$SYSTEMD_DIR" "$CONFIG_DIR"
 cp "$ROOT_DIR"/deploy/ai-memory/ai-memory.container "$ROOT_DIR"/deploy/ai-memory/ai-memory-data.volume "$SYSTEMD_DIR"/
