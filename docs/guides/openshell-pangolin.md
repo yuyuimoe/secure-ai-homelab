@@ -174,7 +174,7 @@ Still in the admin UI, under **Clients**, create a client:
 | Client id | `openshell-cli` |
 | Confidential | No (public client, PKCE) |
 | Redirect URIs | `http://127.0.0.1/callback` |
-| Scopes | `openid profile email roles` |
+| Scopes | `openid profile email` |
 
 !!! note "Why there is no port"
     The OpenShell CLI binds an **ephemeral** loopback port on every login
@@ -190,6 +190,12 @@ Still in the admin UI, under **Clients**, create a client:
 
 The client id `openshell-cli` is deliberate: Rauthy sets the access token
 audience to the client id, which matches OpenShell's default audience.
+
+!!! note "There is no `roles` scope"
+    Rauthy always puts the user's roles in the access token's `roles` claim; it is
+    not gated by a scope. (`groups` is different — it needs the `groups` scope.)
+    An unknown scope such as `roles` is silently ignored, so leave it out and keep
+    `OPENSHELL_OIDC_ROLES_CLAIM=roles` on the gateway.
 
 ### 1.6 Sign in to Pangolin with Rauthy (optional)
 
@@ -324,7 +330,7 @@ openshell gateway add https://<alias>:17670 \
   --oidc-issuer https://<idp>/auth/v1/ \
   --oidc-client-id openshell-cli \
   --oidc-audience openshell-cli \
-  --oidc-scopes "openid profile email roles"
+  --oidc-scopes "openid profile email"
 ```
 
 A browser opens, you log in to Rauthy, and the CLI stores the token bundle. Then:

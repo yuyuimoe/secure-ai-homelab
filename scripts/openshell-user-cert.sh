@@ -40,7 +40,7 @@ open_ui() {
   printf '  openshell gateway add https://<alias>:17670 \\\n'
   printf '    --name homelab --oidc-issuer https://<idp>/auth/v1/ \\\n'
   printf '    --oidc-client-id openshell-cli --oidc-audience openshell-cli \\\n'
-  printf '    --oidc-scopes "openid profile email roles"\n'
+  printf '    --oidc-scopes "openid profile email"\n'
   printf '\nBreak-glass mTLS bundle for this user (copy the three files to):\n'
   printf '  ~/.config/openshell/gateways/homelab-mtls/mtls/\n'
   printf '  ca.crt  tls.crt  tls.key\n'
