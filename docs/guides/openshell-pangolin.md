@@ -105,11 +105,21 @@ Rauthy runs as a rootless Podman quadlet, like the rest of this repo — no comp
 On the VPS checkout:
 
 ```bash
-./scripts/install-rauthy.sh        # copies quadlets, generates secrets
-$EDITOR ~/.config/secure-ai-homelab/rauthy.env   # set PUB_URL + admin email
+./scripts/install-rauthy.sh auth.yuyui.moe    # copies quadlets, generates secrets
+$EDITOR ~/.config/secure-ai-homelab/rauthy.env   # set BOOTSTRAP_ADMIN_EMAIL
 systemctl --user start rauthy.service
 podman logs -f rauthy        # copy the generated admin password (shown once)
 ```
+
+Passing the domain fills `PUB_URL`, `RP_ID` and `RP_ORIGIN`. Three values are
+easy to get wrong:
+
+- `PUB_URL` is the authority **only** — `auth.yuyui.moe`, never `https://auth.yuyui.moe`.
+  Rauthy derives the scheme from `LISTEN_SCHEME` + `PROXY_MODE` (and with
+  `PROXY_MODE=true` it builds `https`).
+- `RP_ID` is the bare domain (`auth.yuyui.moe`) and `RP_ORIGIN` **must include a port**
+  (`https://auth.yuyui.moe:443`). Rauthy refuses to start without them.
+- `ENC_KEYS` and `ENC_KEY_ACTIVE` are both required; the installer generates both.
 
 !!! note "Quadlets cannot be enabled"
     Do not run `systemctl --user enable rauthy.service`. The unit is generated

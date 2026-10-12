@@ -3,8 +3,8 @@
 # Rootless Podman quadlet. Install with scripts/install-rauthy.sh (copies this
 # and rauthy-data.volume into ~/.config/containers/systemd/), then:
 #
-#   $EDITOR ~/.config/secure-ai-homelab/rauthy.env   # secrets + domains
-#   systemctl --user enable --now rauthy.service
+#   $EDITOR ~/.config/secure-ai-homelab/rauthy.env   # admin email
+#   systemctl --user start rauthy.service
 #
 # Runtime settings are read from the env file via EnvironmentFile= (the same
 # idiom as the ai-memory unit). See docs/guides/openshell-pangolin.md.
@@ -13,8 +13,13 @@
 Image=ghcr.io/sebadob/rauthy:0.37.1
 ContainerName=rauthy
 
-# Loopback only: the host-level Newt connector forwards auth.<domain> here.
-PublishPort=127.0.0.1:8080:8080
+# Host networking on purpose. The host-level Newt connector reaches Rauthy on
+# loopback, so Rauthy sees source 127.0.0.1 and `proxy_mode` trusted_proxies is
+# deterministic. With a published port, pasta presents the host's own IP as the
+# source and trusted_proxies cannot be pinned. LISTEN_ADDRESS and the Hiqlite
+# listen addresses are set to 127.0.0.1 in the env file so nothing but loopback
+# is bound on the host.
+Network=host
 
 # Embedded database and generated JWKS/JWT signing keys. Back this up.
 Volume=rauthy-data.volume:/app/data
