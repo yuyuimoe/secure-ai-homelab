@@ -193,19 +193,37 @@ audience to the client id, which matches OpenShell's default audience.
 
 ### 1.6 Sign in to Pangolin with Rauthy (optional)
 
-Pangolin can use the same Rauthy instance as its identity provider. Create a
-second client in Rauthy for Pangolin (confidential; use the callback URL Pangolin
-shows you), then in Pangolin add an **OAuth2/OIDC** provider with:
+Pangolin can use the same Rauthy instance as its identity provider. **Pangolin
+generates the redirect URL**, so the order matters:
 
-| Field | Value |
+1. In Rauthy, create a client for Pangolin (confidential). Leave the redirect URI
+   empty if Rauthy lets you; otherwise put a temporary placeholder and fix it in
+   step 4. Note the client id and secret.
+2. In Pangolin, add an **OAuth2/OIDC** identity provider with the fields below.
+3. Create it, open the provider's **General** tab, and copy its **Redirect URL**.
+4. Put that Redirect URL into the Rauthy client's `redirect_uris` and save.
+
+| Pangolin field | Value |
 |---|---|
-| Client ID / Secret | from that Rauthy client |
+| Client ID / Secret | from the Rauthy client |
 | Authorization URL | `https://<idp>/auth/v1/oidc/authorize` |
 | Token URL | `https://<idp>/auth/v1/oidc/token` |
 | Identifier path | `sub` |
 | Email path | `email` |
 | Name path | `preferred_username` |
 | Scopes | `openid profile email` |
+
+**Post Logout Redirect:** Pangolin's documentation defines only the Redirect URL;
+it does not document a post-logout URL for the OIDC provider. Rauthy's `Post
+Logout Redirect URIs` field is optional, so leave it empty unless your provider's
+General tab shows a logout URL to use.
+
+Reference (Pangolin):
+
+- [OAuth2/OIDC identity provider](https://docs.pangolin.net/manage/identity-providers/openid-connect)
+- [Add Identity Providers](https://docs.pangolin.net/manage/identity-providers/add-an-idp)
+- [Zitadel example](https://docs.pangolin.net/manage/identity-providers/zitadel) —
+  documents the "copy the Redirect URL from the General tab" step
 
 ## Part 2 — Gateway OIDC and SAN
 
