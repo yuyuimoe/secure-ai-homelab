@@ -34,10 +34,18 @@ EOF
 }
 
 command -v podman >/dev/null 2>&1 || { echo "Podman is required." >&2; exit 1; }
-systemctl --user --quiet is-system-running 2>/dev/null || {
-  printf 'A user systemd session is required (loginctl enable-linger %s).\n' "$USER" >&2
+# Probe reachability, not `is-system-running`: that returns non-zero for a
+# degraded (but perfectly usable) user manager, which caused false failures.
+if ! systemctl --user show-environment >/dev/null 2>&1; then
+  {
+    echo "error: cannot reach the $USER user systemd manager."
+    echo "  XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-<unset>}"
+    echo "  DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-<unset>}"
+    echo "Run this from a normal login session, or enable lingering and log back in:"
+    echo "  sudo loginctl enable-linger $USER"
+  } >&2
   exit 1
-}
+fi
 
 # Rootless subuid/subgid range for nested PinP containers.
 if ! grep -qE "^${USER}:[0-9]+:[0-9]+" /etc/subuid 2>/dev/null; then
