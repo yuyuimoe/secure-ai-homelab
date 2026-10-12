@@ -1,0 +1,7 @@
+# Caddy config/autosave state (/config). The Caddyfile itself is mounted
+# read-only from ~/.config/secure-ai-homelab/Caddyfile.
+
+[Volume]
+
+[Install]
+WantedBy=default.target

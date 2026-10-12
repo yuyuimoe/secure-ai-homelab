@@ -22,7 +22,9 @@ endpoints:
     access: full
     enforcement: enforce
 
-# Binaries allowed to use this credential at the endpoint. Scope this to the
-# real MCP client; /usr/bin/curl is here for the smoke test.
+# Binaries allowed to use this credential at the endpoint. `/usr/bin/curl` is
+# kept for smoke tests; `node` is what runs Pi (its ai-memory bridge extension
+# fetches `${AI_MEMORY_SERVER_URL}/mcp` from inside the node process).
 binaries:
   - /usr/bin/curl
+  - /usr/local/bin/node

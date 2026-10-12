@@ -1,48 +1,64 @@
-# VibePod Homelab — Pi agent image (what `vp run pi` launches).
+# Secure AI Homelab — Pi workload image.
 #
-# Descends from VibePod's own `pi` agent (vibepod-agents/docker/pi), upgraded:
-#   * base  node:22-slim            -> ghcr.io/gitguardian/wolfi/bun (glibc+apk)
-#   * agent @earendil-works/pi      -> pi-bolt (AOT-compiled Pi, native binary)
-#   * `pi` is aliased to `pi-bolt`
-#   * the `~/.pi` config mount is kept (Pi-Bolt is Pi; reads ~/.pi/agent)
-#   * Claude Code and ZCode are added as extra harnesses
+# Runs inside OpenShell sandboxes (and, legacy, as VibePod's `pi` agent).
 #
-# Wolfi is glibc, which pi-bolt (glibc x86-64) and Claude Code's native binary
-# both require; musl/Alpine would not work here.
+# Debian + Node, not Wolfi and not pi-bolt, because the target host CPU has no
+# SSE4.2 (x86-64 baseline only):
+#   * Wolfi's glibc is built for x86-64-v2: `Fatal glibc error: CPU does not
+#     support x86-64-v2`.
+#   * pi-bolt is an AOT native binary that requires SSE4.2 (`x64-baseline` too),
+#     so it cannot run at all: "Pi-Bolt needs a CPU with SSE4.2".
+#   * Claude Code 2.1.113+ is a native binary that spins at 100% CPU on such a
+#     host; 2.1.112 is the last pure-JS release and runs on Node.
+#   * Bun's global installer hangs on such a host, so npm is used throughout.
+# The standard Pi agent (`@earendil-works/pi-coding-agent`) is pure JS on Node.
 
-FROM ghcr.io/gitguardian/wolfi/bun:latest
+ARG AI_MEMORY_IMAGE=docker.io/akitaonrails/ai-memory:latest
+
+# ai-memory CLI, used only to generate Pi's bridge extension at build time.
+FROM ${AI_MEMORY_IMAGE} AS memory
+
+FROM docker.io/library/node:22-slim
 
 USER root
 
-ARG PI_BOLT_VERSION=latest
-ARG CLAUDE_CODE_CHANNEL=latest
+ARG PI_VERSION=latest
 ARG ZCODE_VERSION=latest
+ARG CLAUDE_CODE_VERSION=2.1.112
+# Where sandboxes reach ai-memory (the OpenShell supervisor aliases it to host
+# loopback). Must match deploy/ai-memory/provider-profile.yaml.
+ARG AI_MEMORY_SERVER_URL=http://host.openshell.internal:49374
 
-# Bun installs global packages under $BUN_INSTALL/bin.
-ENV BUN_INSTALL=/usr/local \
-    HOME=/root \
-    PATH=/root/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV HOME=/root
 
-RUN apk add --no-cache \
-        bash ca-certificates curl git gosu ripgrep jq \
-        openssl tar xz \
-    && rm -rf /var/cache/apk/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash ca-certificates curl git gosu jq openssl passwd ripgrep tar xz-utils \
+    && rm -rf /var/lib/apt/lists/*
 
-# --- Pi-Bolt (native Pi). `bun add -g --trust` runs the package's postinstall
-# (places the launcher); the native binary is fetched on first run into
-# ~/.pi-bolt. `pi` is aliased to it so `vp run pi` / `pi` behave identically.
-RUN bun add -g --trust "pi-bolt@${PI_BOLT_VERSION}" \
-    && ln -sf /usr/local/bin/pi-bolt /usr/local/bin/pi
+# --- Pi (standard agent, pure JS on Node). `pi` is the real Pi command. -----
+RUN npm install -g "@earendil-works/pi-coding-agent@${PI_VERSION}" \
+    && pi --version
 
-# --- Claude Code (native installer; glibc binary, OK on Wolfi). --------------
-RUN curl -fsSL https://claude.ai/install.sh | bash -s "${CLAUDE_CODE_CHANNEL}" \
-    && test -x /root/.local/bin/claude \
-    && ln -sf /root/.local/bin/claude /usr/local/bin/claude
+# --- Claude Code, pinned to the last pure-JS release. ----------------------
+RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+    && claude --version
 
-# --- ZCode (terminal client for the ZCode agent runtime). -------------------
-# NOTE: zcode declares `engines.node >= 22.19`; it runs under Bun here. If a
-# later zcode release needs real Node, `apk add nodejs-24` (Wolfi) and retry.
-RUN bun install -g "zcode-app-cli@${ZCODE_VERSION}"
+# --- ZCode (Node-based TUI). -----------------------------------------------
+RUN npm install -g "zcode-app-cli@${ZCODE_VERSION}" \
+    && zcode --version
+
+# --- ai-memory bridge for Pi -----------------------------------------------
+# Pi has no native MCP config, so ai-memory generates a TypeScript extension at
+# ~/.pi/agent/extensions/ai-memory-pi.ts. It reads AI_MEMORY_AUTH_TOKEN from the
+# environment at run time (the OpenShell provider fills it with an opaque
+# placeholder the supervisor substitutes at the endpoint), so no secret is baked.
+COPY --from=memory /usr/local/bin/ai-memory /usr/local/bin/ai-memory
+RUN mkdir -p /config /tmp/ai-memory-build \
+    && HOME=/config AI_MEMORY_DATA_DIR=/tmp/ai-memory-build AI_MEMORY_SERVER_URL="${AI_MEMORY_SERVER_URL}" \
+         ai-memory install-hooks --agent pi --apply --server-url "${AI_MEMORY_SERVER_URL}" \
+    && rm -rf /tmp/ai-memory-build \
+    && test -f /config/.pi/agent/extensions/ai-memory-pi.ts
 
 # Runtime HOME is the agent config dir (VibePod mounts the persisted config
 # there), mirroring the upstream VibePod pi image's /config layout.
@@ -59,6 +75,13 @@ RUN mkdir -p /config/.pi/agent /config/.claude /config/.zcode /workspace \
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 0755 /usr/local/bin/entrypoint.sh
+
+# OpenShell rejects a workload image whose declared UID/GID is 0 ("workload
+# identity must not contain UID or GID zero"). Run as 1000 (the node image's
+# `node` user); the entrypoint still honours VibePod's USER_UID/USER_GID remap
+# when it happens to start as root.
+RUN chown -R 1000:1000 /config /workspace
+USER 1000:1000
 
 WORKDIR /workspace
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

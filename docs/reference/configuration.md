@@ -12,11 +12,12 @@ Configuration is split across the environment template (`.env`), the VibePod con
 | Key | Default | Meaning |
 |---|---|---|
 | `CONTAINER_UID` / `CONTAINER_GID` | `1000` / `1000` | UID/GID owning the persistent volumes (match your host user) |
-| `PI_BOLT_VERSION` | `latest` | pi-bolt version baked into the Pi agent image |
-| `CLAUDE_CODE_CHANNEL` | `latest` | Claude Code installer channel |
+| `PI_VERSION` | `latest` | `@earendil-works/pi-coding-agent` version baked into the Pi agent image |
+| `CLAUDE_CODE_VERSION` | `2.1.112` | Claude Code version; 2.1.112 is the last pure-JS release (2.1.113+ is a native binary that needs SSE4.2) |
 | `ZCODE_VERSION` | `latest` | zcode-app-cli version |
 | `SHELLCHECK_VERSION` | `0.10.0` | shellcheck release |
 | `AI_MEMORY_VERSION` | `2.6.3` | ai-memory version for both the control-plane CLI and the server image |
+| `AI_MEMORY_CLI_IMAGE` | `docker.io/akitaonrails/ai-memory:latest` | image the Pi workload build copies the ai-memory CLI from (for its Pi bridge) |
 | `AI_MEMORY_AUTH_TOKEN` | empty | bearer token for ai-memory (empty = unauthenticated, loopback only) |
 | `AI_MEMORY_ALLOWED_HOSTS` | `localhost,127.0.0.1,host.containers.internal` | allowed ai-memory Host headers |
 | `AI_MEMORY_LLM_PROVIDER` | empty | LLM provider for ai-memory (empty = no LLM calls) |
@@ -33,7 +34,7 @@ default_agent: pi
 agents:
   pi:
     enabled: true
-    image: vibepod/pi-bolt:latest
+    image: vibepod/pi:latest
 ```
 
 Edit it inside the control plane (`podman exec -it vibepod $EDITOR ~/.config/vibepod/config.yaml`), or pass VibePod's own environment overrides (`VP_IMAGE_PI`, `VP_DEFAULT_AGENT`, `VP_PROXY_ENABLED`, `VP_BOARD_URL`, …). See the [VibePod configuration reference](https://vibepod.dev/docs/configuration/) for the full schema (profiles, env, volumes, ports, `init`, proxy, `llm`, `board`).

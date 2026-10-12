@@ -21,23 +21,24 @@ systemctl --user start vibepod-pod.service pinp.service vibepod.service 2>/dev/n
 
 podman_in() { podman --url "$SOCKET" "$@"; }
 
-echo "Building the Pi agent image (pi-bolt + claude + zcode) into PinP..."
+echo "Building the Pi agent image (pi + claude + zcode) into PinP..."
 # `podman build` targets the INNER daemon through the shared socket, so the
 # image lands in PinP storage with no registry involved (fully self-hosted).
 podman_in build \
-  --build-arg "PI_BOLT_VERSION=${PI_BOLT_VERSION:-latest}" \
-  --build-arg "CLAUDE_CODE_CHANNEL=${CLAUDE_CODE_CHANNEL:-latest}" \
+  --build-arg "PI_VERSION=${PI_VERSION:-latest}" \
+  --build-arg "CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION:-2.1.112}" \
   --build-arg "ZCODE_VERSION=${ZCODE_VERSION:-latest}" \
-  -t vibepod/pi-bolt:latest -f "$ROOT_DIR/docker/pi/Containerfile" "$ROOT_DIR/docker/pi"
+  --build-arg "AI_MEMORY_CLI_IMAGE=${AI_MEMORY_CLI_IMAGE:-docker.io/akitaonrails/ai-memory:latest}" \
+  -t vibepod/pi:latest -f "$ROOT_DIR/docker/pi/Containerfile" "$ROOT_DIR/docker/pi"
 
-echo "Writing VibePod config (default agent pi, image vibepod/pi-bolt:latest)..."
+echo "Writing VibePod config (default agent pi, image vibepod/pi:latest)..."
 podman exec vibepod sh -c "mkdir -p '$CFG' && cat > '$CFG/config.yaml'" <<'YAML'
 version: 1
 default_agent: pi
 agents:
   pi:
     enabled: true
-    image: vibepod/pi-bolt:latest
+    image: vibepod/pi:latest
     env: {}
 YAML
 

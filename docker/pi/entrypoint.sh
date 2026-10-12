@@ -2,7 +2,7 @@
 # VibePod Homelab — Pi agent entrypoint.
 # Handles dynamic UID/GID mapping (VibePod passes USER_UID/USER_GID) so files
 # written into the workspace and the mounted config dir belong to the host
-# user. Adapted from VibePod's own pi entrypoint, using gosu (Wolfi ships it).
+# user. Adapted from VibePod's own pi entrypoint, using gosu (Debian ships it).
 
 set -e
 
@@ -12,6 +12,13 @@ HOME=${HOME:-/config}
 
 export HOME
 export SHELL=/bin/bash
+
+# Already non-root (OpenShell runs the workload as the image's USER): there is
+# no privilege to drop, so just make sure the config dirs exist and exec.
+if [ "$(id -u)" -ne 0 ]; then
+    mkdir -p "$HOME/.pi/agent" "$HOME/.claude" "$HOME/.zcode" /workspace 2>/dev/null || true
+    exec "$@"
+fi
 
 mkdir -p "$HOME" "$HOME/.pi/agent" "$HOME/.claude" "$HOME/.zcode" /workspace
 

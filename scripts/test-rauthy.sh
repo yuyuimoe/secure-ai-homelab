@@ -107,6 +107,23 @@ else
     fail "install-rauthy.sh failed in a clean XDG_CONFIG_HOME"
   fi
   rm -rf "$tmp"
+
+  # Port variant: a non-standard public port lands in PUB_URL and RP_ORIGIN,
+  # while RP_ID stays the bare domain.
+  tmp_port="$(mktemp -d)"
+  if XDG_CONFIG_HOME="$tmp_port" "$ROOT_DIR/scripts/install-rauthy.sh" rauthy.example.test 8443 >/dev/null 2>&1; then
+    env_file="$tmp_port/secure-ai-homelab/rauthy.env"
+    get() { grep -m1 -E "^$1=" "$env_file" | cut -d= -f2-; }
+    [[ $(get PUB_URL) == "rauthy.example.test:8443" ]] \
+      && pass "PUB_URL gains a non-standard port" || fail "PUB_URL port wrong: [$(get PUB_URL)]"
+    [[ $(get RP_ID) == "rauthy.example.test" ]] \
+      && pass "RP_ID stays the bare domain with a custom port" || fail "RP_ID wrong: [$(get RP_ID)]"
+    [[ $(get RP_ORIGIN) == "https://rauthy.example.test:8443" ]] \
+      && pass "RP_ORIGIN takes the custom port" || fail "RP_ORIGIN wrong: [$(get RP_ORIGIN)]"
+  else
+    fail "install-rauthy.sh failed for the custom-port case"
+  fi
+  rm -rf "$tmp_port"
 fi
 
 if (( FAILED )); then

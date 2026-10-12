@@ -25,7 +25,7 @@ cp .env.example .env      # edit GIT_USER_NAME/EMAIL, AI_MEMORY_*, pins
 
 1. checks Podman, the user systemd session and `/etc/subuid` ranges;
 2. copies `systemd/*` quadlets into `~/.config/containers/systemd/`;
-3. builds the control-plane, PinP and ai-memory images (locally, from Wolfi bases — no registry pull);
+3. builds the control-plane, PinP and ai-memory images (locally, from pinned base images — no registry pull);
 4. enables and starts the pod and its containers;
 5. installs the `vph` launcher into `~/.local/bin`.
 
@@ -35,7 +35,7 @@ cp .env.example .env      # edit GIT_USER_NAME/EMAIL, AI_MEMORY_*, pins
 vph setup
 ```
 
-`setup.sh` builds the Pi agent image (Pi-Bolt + Claude Code + ZCode) **into PinP**, writes the VibePod config (default agent `pi`, image `vibepod/pi-bolt:latest`), and wires ai-memory into the Pi and Claude config dirs.
+`setup.sh` builds the Pi agent image (standard Pi + Claude Code + ZCode) **into PinP**, writes the VibePod config (default agent `pi`, image `vibepod/pi:latest`), and wires ai-memory into the Pi and Claude config dirs.
 
 ## Authenticate
 

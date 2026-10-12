@@ -1,0 +1,31 @@
+# Caddy — local TLS terminator for Rauthy.
+#
+# Production puts Pangolin (Newt) in front of Rauthy, so nothing here is needed
+# there. This file is for hosts without Pangolin in front of the IdP — local
+# VMs and rehearsal boxes — where Rauthy must still be reachable over HTTPS so
+# the OpenShell gateway can fetch its discovery document and JWKS.
+#
+# install-caddy.sh substitutes <idp> and <port>, starts the quadlet, and (with
+# passwordless sudo) installs the internal root CA into the system trust store.
+# Everything is reverse-proxied to Rauthy on loopback, path preserved, so the
+# `/auth/v1/` issuer prefix stays intact.
+
+{
+	# The official image already sets XDG_DATA_HOME=/data, so Caddy's storage is
+	# /data/caddy and the internal CA lands at
+	# /data/caddy/pki/authorities/local/root.crt inside the data volume.
+
+	# Rootless Podman cannot bind :80 (a privileged port), and the scheduler
+	# runs nothing but HTTPS here. Without this, Caddy tries to start the
+	# automatic HTTP->HTTPS redirect listener and exits with
+	# `listen tcp :80: bind: permission denied`.
+	auto_https disable_redirects
+}
+
+<idp>:<port> {
+	# Self-signed leaf from Caddy's own CA. Install the root into the system
+	# trust store, or point SSL_CERT_FILE at it for the OpenShell gateway.
+	tls internal
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8080
+}

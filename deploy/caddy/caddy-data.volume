@@ -1,0 +1,8 @@
+# Caddy data: the internal CA, its intermediate, and issued certificates.
+# Losing this regenerates the CA, and every client (including the OpenShell
+# gateway's trust store) must re-trust it.
+
+[Volume]
+
+[Install]
+WantedBy=default.target

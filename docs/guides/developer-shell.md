@@ -37,7 +37,7 @@ Wolfi names tools the same as Alpine, so no `batcat`/`fdfind` aliases are needed
 
 ## Why Wolfi instead of Debian?
 
-Wolfi gives glibc (so `pi-bolt` and Claude Code's native binaries run) with apk packaging (Alpine-small). That is the combination musl/Alpine cannot provide for native agent binaries. See [Architecture](../concepts/architecture.md) for how the agent images themselves are built.
+Wolfi gives glibc (so native agent binaries run) with apk packaging (Alpine-small). That is the combination musl/Alpine cannot provide for native binaries. See [Architecture](../concepts/architecture.md) for how the agent images themselves are built (the Pi workload image is Debian + Node).
 
 ## Rebuild after image changes
 

@@ -153,6 +153,28 @@ Rauthy's endpoints, which you need below:
 | Token | `https://<idp>/auth/v1/oidc/token` |
 | JWKS | `https://<idp>/auth/v1/oidc/certs` |
 
+!!! note "No Pangolin? Terminate TLS with Caddy"
+    A local VM or a host without Pangolin still needs HTTPS in front of Rauthy,
+    or the gateway cannot fetch discovery/JWKS. `scripts/install-caddy.sh` runs
+    Caddy as a rootless quadlet with its own internal CA:
+
+    ```bash
+    ./scripts/install-rauthy.sh auth.example.test 8443   # note the port
+    ./scripts/install-caddy.sh auth.example.test 8443
+    echo '127.0.0.1 auth.example.test' | sudo tee -a /etc/hosts
+    curl -s https://auth.example.test:8443/auth/v1/.well-known/openid-configuration | head
+    ```
+
+    Caddy reverse-proxies everything (the `/auth/v1/` prefix preserved) to Rauthy
+    on `127.0.0.1:8080`, and the installer adds Caddy's internal root CA to the
+    host trust store so the gateway trusts the self-signed leaf.
+
+    Port `8443`, not `443`: rootless Podman cannot bind a port below
+    `net.ipv4.ip_unprivileged_port_start` (1024), and Caddy disables its
+    HTTP->HTTPS `:80` listener for the same reason. If you want 443 on a
+    rehearsal host, set `net.ipv4.ip_unprivileged_port_start=0` (root) and pass
+    `443` to both scripts.
+
 ### 1.4 Create the roles, groups and users
 
 In the Rauthy admin UI (`https://<idp>/admin`):
@@ -261,14 +283,28 @@ scopes_claim     = ""
 
 With an OIDC issuer configured, mTLS user authentication defaults **off**. Force
 it back on so your client certificate still works when Rauthy is down. Write
-`~/.config/openshell/gateway.env`:
+`~/.config/openshell/gateway.env` (OpenShell 0.1.3):
 
 ```bash
 OPENSHELL_ENABLE_MTLS_AUTH=true
+OPENSHELL_TLS_CERT=/home/<you>/.local/state/openshell/tls/server/tls.crt
+OPENSHELL_TLS_KEY=/home/<you>/.local/state/openshell/tls/server/tls.key
+OPENSHELL_TLS_CLIENT_CA=/home/<you>/.local/state/openshell/tls/ca.crt
 ```
 
-The Debian/RPM package loads this file for gateway startup. The local client CA
-under `~/.local/state/openshell/tls/ca.crt` is used automatically.
+Paths are literal: the package unit loads this file as a systemd
+`EnvironmentFile=`, which does **not** expand `~` or `$HOME`.
+
+!!! warning "`OPENSHELL_ENABLE_MTLS_AUTH=true` alone fails preflight"
+    mTLS user auth requires a client CA **and** the listener cert/key in the same
+    effective config. With only the boolean set, `config preflight` rejects the
+    file as `category=malformed detected_version=2` — the category is misleading,
+    the real cause is the missing `--tls-client-ca`. The three paths above point
+    at the PKI `generate-certs` already wrote under `OPENSHELL_LOCAL_TLS_DIR`
+    (default `~/.local/state/openshell/tls`). The file form has the same
+    requirement: `[openshell.gateway.mtls_auth] enabled = true` is invalid
+    unless `[openshell.gateway.tls]` also sets `cert_path`, `key_path` and
+    `client_ca_path`.
 
 ### 2.3 Restart and verify
 
@@ -284,6 +320,20 @@ openshell status
 
 Because the SAN set changed, `~/.local/state/openshell/tls/` is regenerated. Any
 machine that already had the old mTLS bundle must be re-enrolled (Part 5).
+
+!!! note "The first identity needs workspace membership"
+    A freshly authenticated principal is not a member of the `default`
+    workspace, and every `openshell sandbox ...` / `provider ...` call fails with
+    *"not a member of workspace 'default'"*. An OIDC user holding
+    `openshell-admin` can grant membership in the admin UI or CLI. On a headless
+    host with no browser OIDC login, bootstrap the mTLS principal once: remove
+    the `[openshell.gateway.oidc]` table, restart the gateway (mTLS is then the
+    only identity), grant the membership, then put the table back and restart.
+
+    ```bash
+    openshell workspace member add --workspace default \
+      --subject openshell-client --role admin
+    ```
 
 ## Part 3 — Pangolin private resource
 
@@ -432,8 +482,53 @@ credentials are not declared by profile"*. The sandbox sees only an opaque
 placeholder; the supervisor substitutes the real key only for requests to
 `host.openshell.internal:49374`.
 
-Scope the profile's `binaries` list to the real agent/MCP client before use;
-the shipped profile lists `/usr/bin/curl` for the smoke test.
+Scope the profile's `binaries` list to the real agent/MCP client before use.
+The shipped profile lists `/usr/bin/curl` for the smoke test and
+`/usr/local/bin/node` for Pi (its ai-memory bridge runs inside the node process);
+without the node entry the supervisor blocks the request and the client sees a
+failed fetch.
+
+### 6.4 The Pi workload image
+
+Build the Pi workload image from this repo (it bakes Pi's ai-memory bridge in):
+
+```bash
+podman build \
+  --build-arg AI_MEMORY_CLI_IMAGE=localhost/secure-ai-homelab/ai-memory:latest \
+  -t localhost/secure-ai-homelab/pi:latest \
+  -f docker/pi/Containerfile docker/pi
+```
+
+Then create a sandbox from it with the person's provider:
+
+```bash
+openshell sandbox create --name pi-mem \
+  --from localhost/secure-ai-homelab/pi:latest \
+  --provider ai-memory-alice -- pi
+```
+
+The image bakes Pi's bridge extension (`ai-memory install-hooks --agent pi`),
+which reads `AI_MEMORY_AUTH_TOKEN` from the environment at run time, so what the
+sandbox holds is the provider's opaque placeholder and the supervisor substitutes
+the real key at the endpoint. Claude Code and ZCode are installed alongside Pi.
+
+!!! warning "CPU compatibility: hosts without SSE4.2"
+    The image is **Debian + Node**, not Wolfi and not pi-bolt, because the target
+    CPU is x86-64 baseline (no SSE4.2):
+
+    | Component | Result | Why |
+    |---|---|---|
+    | Wolfi base | fails | glibc built for x86-64-v2: `Fatal glibc error: CPU does not support x86-64-v2` |
+    | pi-bolt | fails | AOT binary requires SSE4.2, `x64-baseline` included: *"Pi-Bolt needs a CPU with SSE4.2"* |
+    | `@earendil-works/pi-coding-agent` (Node) | runs | pure JavaScript |
+    | Claude Code 2.1.113+ | hangs | native binary spins at 100% CPU; the image pins **2.1.112**, the last pure-JS release |
+    | ZCode (`zcode-app-cli`) | runs | Node-based |
+    | Bun global installs | hang | `bun add -g` spins at 100% CPU; the image uses `npm` throughout |
+
+    OpenShell also rejects a workload image whose declared user is root
+    (*"workload identity must not contain UID or GID zero"*), so the image ends
+    with `USER 1000:1000` and its entrypoint is a no-op when it is already
+    non-root.
 
 ## Troubleshooting
 
@@ -449,7 +544,12 @@ the shipped profile lists `/usr/bin/curl` for the smoke test.
 | Login fails with an issuer mismatch | `issuer` missing its trailing slash | Use `https://<idp>/auth/v1/` exactly |
 | Sandbox stuck in `Error`; reason mentions `getent`/`passwd database` | The gateway auto-selected the **Docker** driver (Podman socket down, Docker present) | Pin `compute_driver = "podman"` in `gateway.toml` and `systemctl --user enable --now podman.socket` |
 | `provider credentials are not declared by profile` | `--credential` used the credential name | Use the env var name, e.g. `--credential AI_MEMORY_AUTH_TOKEN=…` |
-| `Fatal glibc error: CPU does not support x86-64-v2` | A Wolfi-based image on a CPU without v2 (the legacy VibePod `ghcr.io/gitguardian/wolfi/bun` images) | ai-memory is Debian-based and unaffected; rebuild VibePod on Debian |
+| `Fatal glibc error: CPU does not support x86-64-v2` | A Wolfi-based image on a CPU without v2 | Use a Debian-based image; the Pi workload image and ai-memory both are |
+| `Pi-Bolt needs a CPU with SSE4.2` | pi-bolt on an x86-64-baseline CPU | Use the standard Pi agent (the Pi workload image does) |
+| Claude Code hangs at 100% CPU | Native Claude Code 2.1.113+ on a CPU without SSE4.2 | Pin `@anthropic-ai/claude-code@2.1.112` (last pure-JS release) |
+| `workload identity must not contain UID or GID zero` | Workload image's `USER` is root | End the image with `USER 1000:1000` |
+| `not a member of workspace 'default'` | Identity has no workspace membership | `openshell workspace member add --workspace default --subject <sub> --role admin` (see Part 2.3) |
+| Preflight `category=malformed` with `OPENSHELL_ENABLE_MTLS_AUTH=true` | mTLS needs a client CA + listener cert/key | Also set `OPENSHELL_TLS_CERT` / `OPENSHELL_TLS_KEY` / `OPENSHELL_TLS_CLIENT_CA` (Part 2.2) |
 | ai-memory fails at start: `no recoverable root user` or `refusing human authentication on non-loopback` | The token pepper enables human/session auth | Set `AI_MEMORY_AUTH__RECOVERY_TOKEN` (>=32 chars) and `AI_MEMORY_AUTH__SECURE_COOKIE=true` |
 
 ## Security notes
