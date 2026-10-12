@@ -397,10 +397,11 @@ The server binds host loopback. The OpenShell supervisor is host-networked and
 reaches it through the `host.openshell.internal` alias (which maps to
 `host_gateway_ip`, `127.0.0.1` on native Linux).
 
-!!! note "CPUs without x86-64-v2"
-    The Wolfi-based image needs x86-64-v2 (SSE4.2/POPCNT). On a v2-less host the
-    build fails with `Fatal glibc error: CPU does not support x86-64-v2`. Use the
-    upstream image instead:
+!!! note "Image base"
+    The ai-memory image is Debian-based (`debian:bookworm-slim`), which runs on
+    baseline x86-64 — including hosts whose CPU lacks x86-64-v2, where a Wolfi
+    base dies with `Fatal glibc error: CPU does not support x86-64-v2`. To skip
+    the local build, `--no-build` uses a prebuilt image:
 
     ```bash
     podman pull docker.io/akitaonrails/ai-memory:latest
@@ -448,7 +449,8 @@ the shipped profile lists `/usr/bin/curl` for the smoke test.
 | Login fails with an issuer mismatch | `issuer` missing its trailing slash | Use `https://<idp>/auth/v1/` exactly |
 | Sandbox stuck in `Error`; reason mentions `getent`/`passwd database` | The gateway auto-selected the **Docker** driver (Podman socket down, Docker present) | Pin `compute_driver = "podman"` in `gateway.toml` and `systemctl --user enable --now podman.socket` |
 | `provider credentials are not declared by profile` | `--credential` used the credential name | Use the env var name, e.g. `--credential AI_MEMORY_AUTH_TOKEN=…` |
-| `Fatal glibc error: CPU does not support x86-64-v2` | Host CPU lacks x86-64-v2; the Wolfi base cannot run | Use the upstream image with `install-ai-memory.sh --no-build` |
+| `Fatal glibc error: CPU does not support x86-64-v2` | A Wolfi-based image on a CPU without v2 (the legacy VibePod `ghcr.io/gitguardian/wolfi/bun` images) | ai-memory is Debian-based and unaffected; rebuild VibePod on Debian |
+| ai-memory fails at start: `no recoverable root user` or `refusing human authentication on non-loopback` | The token pepper enables human/session auth | Set `AI_MEMORY_AUTH__RECOVERY_TOKEN` (>=32 chars) and `AI_MEMORY_AUTH__SECURE_COOKIE=true` |
 
 ## Security notes
 

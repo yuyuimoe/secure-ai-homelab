@@ -68,7 +68,10 @@ if [[ -f $ENV_FILE ]]; then
 else
   root_token="$(openssl rand -base64 36 | tr -d '\n/+= ' | cut -c1-44)"
   token_pepper="$(openssl rand -base64 48 | tr -d '\n/+= ' | cut -c1-64)"
-  sed -e "s|<root-token>|$root_token|" -e "s|<token-pepper>|$token_pepper|" \
+  recovery_token="$(openssl rand -base64 48 | tr -d '\n/+= ' | cut -c1-48)"
+  sed -e "s|<root-token>|$root_token|" \
+      -e "s|<token-pepper>|$token_pepper|" \
+      -e "s|<recovery-token>|$recovery_token|" \
     "$ROOT_DIR/deploy/ai-memory/ai-memory.env.example" >"$ENV_FILE"
   chmod 600 "$ENV_FILE"
   echo "Wrote $ENV_FILE with a generated root token (mode 600)."
