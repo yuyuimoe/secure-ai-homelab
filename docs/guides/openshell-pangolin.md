@@ -138,11 +138,20 @@ Add a **public HTTP resource** for `<idp>` targeting `localhost:8080` on the New
 site. Do **not** attach a Pangolin SSO policy to it — Rauthy is the identity
 provider; a login gate in front of it creates a redirect loop.
 
-Verify from anywhere:
+Verify from anywhere (note the `/auth/v1/` path — Rauthy scopes its issuer to it):
 
 ```bash
-curl -s https://<idp>/.well-known/openid-configuration | head
+curl -s https://<idp>/auth/v1/.well-known/openid-configuration | head
 ```
+
+Rauthy's endpoints, which you need below:
+
+| Value | URL |
+|---|---|
+| Issuer | `https://<idp>/auth/v1/` |
+| Authorization | `https://<idp>/auth/v1/oidc/authorize` |
+| Token | `https://<idp>/auth/v1/oidc/token` |
+| JWKS | `https://<idp>/auth/v1/oidc/certs` |
 
 ### 1.4 Create the roles, groups and users
 
@@ -176,6 +185,22 @@ Still in the admin UI, under **Clients**, create a client:
 The client id `openshell-cli` is deliberate: Rauthy sets the access token
 audience to the client id, which matches OpenShell's default audience.
 
+### 1.6 Sign in to Pangolin with Rauthy (optional)
+
+Pangolin can use the same Rauthy instance as its identity provider. Create a
+second client in Rauthy for Pangolin (confidential; use the callback URL Pangolin
+shows you), then in Pangolin add an **OAuth2/OIDC** provider with:
+
+| Field | Value |
+|---|---|
+| Client ID / Secret | from that Rauthy client |
+| Authorization URL | `https://<idp>/auth/v1/oidc/authorize` |
+| Token URL | `https://<idp>/auth/v1/oidc/token` |
+| Identifier path | `sub` |
+| Email path | `email` |
+| Name path | `preferred_username` |
+| Scopes | `openid profile email` |
+
 ## Part 2 — Gateway OIDC and SAN
 
 On the VPS, edit `~/.config/openshell/gateway.toml`.
@@ -188,7 +213,7 @@ On the VPS, edit `~/.config/openshell/gateway.toml`.
 server_sans = ["<alias>", "openshell", "*.dev.openshell.localhost", "127.0.0.1", "localhost"]
 
 [openshell.gateway.oidc]
-issuer           = "https://<idp>"
+issuer           = "https://<idp>/auth/v1/"
 audience         = "openshell-cli"
 roles_claim      = "roles"
 admin_role       = "openshell-admin"
@@ -272,7 +297,7 @@ With the Pangolin client connected:
 ```bash
 openshell gateway add https://<alias>:17670 \
   --name homelab \
-  --oidc-issuer https://<idp> \
+  --oidc-issuer https://<idp>/auth/v1/ \
   --oidc-client-id openshell-cli \
   --oidc-audience openshell-cli \
   --oidc-scopes "openid profile email roles"
@@ -323,7 +348,7 @@ local PKI, or by minting short-lived certificates. Track serial numbers with
 | `x509: certificate is valid for ...` on connect | Alias missing from the server certificate | Add `<alias>` to `server_sans`, restart, re-enroll bundles |
 | Login redirect fails | Redirect URI not registered | Register `http://127.0.0.1:*/callback` on the `openshell-cli` client |
 | `Authentication: Failed` / browser opens but no roles | Roles claim empty | Confirm `roles_claim = "roles"` and that the user has `openshell-admin` or `openshell-user` |
-| Gateway cannot reach the IdP | Issuer not HTTPS or not reachable from the VPS | `curl https://<idp>/.well-known/openid-configuration` from the VPS |
+| Gateway cannot reach the IdP | Issuer not HTTPS or not reachable from the VPS | `curl https://<idp>/auth/v1/.well-known/openid-configuration` from the VPS |
 | Everyone loses access after a SAN change | Local PKI regenerated | Re-copy the new client bundle / re-run `gateway add` |
 | Tunnel connects, nothing answers | Newt cannot reach the gateway | Check `systemctl status newt` and that the resource targets port `17670` |
 

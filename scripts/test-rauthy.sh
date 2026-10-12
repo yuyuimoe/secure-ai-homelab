@@ -74,6 +74,7 @@ else
       TRUSTED_PROXIES="$(get TRUSTED_PROXIES)"
       HQL_LISTEN_ADDR_API="$(get HQL_LISTEN_ADDR_API)"
       HQL_LISTEN_ADDR_RAFT="$(get HQL_LISTEN_ADDR_RAFT)"
+      HQL_NODES="$(get HQL_NODES)"
       [[ ${PUB_URL:-} == "rauthy.example.test" ]] \
         && pass "PUB_URL filled with the domain" || fail "PUB_URL not filled"
       [[ ${PUB_URL:-} != *"://"* ]] \
@@ -91,6 +92,13 @@ else
         && pass "TRUSTED_PROXIES set for host networking" || fail "TRUSTED_PROXIES wrong"
       [[ ${HQL_LISTEN_ADDR_API:-} == "127.0.0.1" && ${HQL_LISTEN_ADDR_RAFT:-} == "127.0.0.1" ]] \
         && pass "Hiqlite listeners bound to loopback" || fail "Hiqlite listeners not loopback"
+      [[ ${HQL_NODES:-} == "1 localhost:8100 localhost:8200" ]] \
+        && pass "HQL_NODES unquoted (podman --env-file keeps quotes)" || fail "HQL_NODES wrong: [$HQL_NODES]"
+      if grep -qE '^[A-Za-z_][A-Za-z0-9_]*=.*"' "$env_file"; then
+        fail "env file has a quoted value; podman --env-file passes quotes literally"
+      else
+        pass "no quoted values in the env file"
+      fi
     fi
   else
     fail "install-rauthy.sh failed in a clean XDG_CONFIG_HOME"

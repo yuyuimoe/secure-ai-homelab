@@ -38,7 +38,7 @@ usage() { sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 open_ui() {
   printf '\nGateway OIDC (daily):\n'
   printf '  openshell gateway add https://<alias>:17670 \\\n'
-  printf '    --name homelab --oidc-issuer https://<idp> \\\n'
+  printf '    --name homelab --oidc-issuer https://<idp>/auth/v1/ \\\n'
   printf '    --oidc-client-id openshell-cli --oidc-audience openshell-cli \\\n'
   printf '    --oidc-scopes "openid profile email roles"\n'
   printf '\nBreak-glass mTLS bundle for this user (copy the three files to):\n'
