@@ -50,6 +50,7 @@ Before you start, check the host can actually run OpenShell:
 | `deploy/rauthy/` | Rauthy OIDC quadlets + env template |
 | `deploy/ai-memory/` | ai-memory quadlets, env template, OpenShell provider profile |
 | `scripts/check-openshell-host.sh` | OpenShell kernel preflight |
+| `scripts/check-kvm.sh` | KVM / nested-virtualization preflight (bare metal and VPS) |
 | `scripts/openshell-user-cert.sh` | Mint break-glass mTLS client certificates |
 | `scripts/`, `systemd/`, `docker/`, `Containerfile` | The earlier VibePod Homelab stack |
 | `docs/` | Documentation (MkDocs Material) |
