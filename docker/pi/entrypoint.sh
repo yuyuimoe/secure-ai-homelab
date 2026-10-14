@@ -2,7 +2,7 @@
 # VibePod Homelab — Pi agent entrypoint.
 # Handles dynamic UID/GID mapping (VibePod passes USER_UID/USER_GID) so files
 # written into the workspace and the mounted config dir belong to the host
-# user. Adapted from VibePod's own pi entrypoint, using gosu (Debian ships it).
+# user. Adapted from VibePod's own pi entrypoint, using gosu (Wolfi ships it).
 
 set -e
 

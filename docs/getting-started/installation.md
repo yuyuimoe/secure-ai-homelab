@@ -35,7 +35,7 @@ cp .env.example .env      # edit GIT_USER_NAME/EMAIL, AI_MEMORY_*, pins
 vph setup
 ```
 
-`setup.sh` builds the Pi agent image (standard Pi + Claude Code + ZCode) **into PinP**, writes the VibePod config (default agent `pi`, image `vibepod/pi:latest`), and wires ai-memory into the Pi and Claude config dirs.
+`setup.sh` builds the Pi agent image (Pi-Bolt + Claude Code + ZCode) **into PinP**, writes the VibePod config (default agent `pi`, image `vibepod/pi:latest`), and wires ai-memory into the Pi and Claude config dirs.
 
 ## Authenticate
 

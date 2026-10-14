@@ -13,7 +13,7 @@ ENV_FILE="$CONFIG_DIR/ai-memory.env"
 IMAGE="localhost/secure-ai-homelab/ai-memory:latest"
 
 # --no-build: use an already-present image instead of building the Wolfi one.
-# Needed on CPUs without x86-64-v2, where the Wolfi glibc cannot run. Tag the
+# Useful to skip the local build (slower first run, no network). Tag the
 # upstream image as $IMAGE first, e.g.
 #   podman pull docker.io/akitaonrails/ai-memory:latest
 #   podman tag  docker.io/akitaonrails/ai-memory:latest $IMAGE

@@ -12,8 +12,8 @@ Configuration is split across the environment template (`.env`), the VibePod con
 | Key | Default | Meaning |
 |---|---|---|
 | `CONTAINER_UID` / `CONTAINER_GID` | `1000` / `1000` | UID/GID owning the persistent volumes (match your host user) |
-| `PI_VERSION` | `latest` | `@earendil-works/pi-coding-agent` version baked into the Pi agent image |
-| `CLAUDE_CODE_VERSION` | `2.1.112` | Claude Code version; 2.1.112 is the last pure-JS release (2.1.113+ is a native binary that needs SSE4.2) |
+| `PI_BOLT_VERSION` | `latest` | `pi-bolt` (AOT-compiled Pi) version baked into the Pi agent image |
+| `CLAUDE_CODE_CHANNEL` | `latest` | Claude Code release channel passed to the native installer (`https://claude.ai/install.sh`) |
 | `ZCODE_VERSION` | `latest` | zcode-app-cli version |
 | `SHELLCHECK_VERSION` | `0.10.0` | shellcheck release |
 | `AI_MEMORY_VERSION` | `2.6.3` | ai-memory version for both the control-plane CLI and the server image |

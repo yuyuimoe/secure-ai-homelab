@@ -55,7 +55,7 @@ The old compose `projects-init` service existed only because Docker Compose `vol
 
 ## ai-memory
 
-The server runs in the pod (`ai-memory.container`), listening on `127.0.0.1:49374` on the host. Its image is built locally from `docker/ai-memory/Containerfile` — the upstream release binary on a `debian:bookworm-slim` runtime, pinned with `AI_MEMORY_VERSION` (no Docker Hub pull). Agents spawned in PinP reach it at:
+The server runs in the pod (`ai-memory.container`), listening on `127.0.0.1:49374` on the host. Its image is built locally from `docker/ai-memory/Containerfile` — the upstream release binary on a `chainguard/wolfi-base` runtime, pinned with `AI_MEMORY_VERSION` (no Docker Hub pull). Agents spawned in PinP reach it at:
 
 ```text
 http://host.containers.internal:49374

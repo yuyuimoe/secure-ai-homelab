@@ -5,11 +5,14 @@
 # client (talks to the PinP socket) and the ai-memory CLI (wires memory into
 # agent config dirs).
 #
-# Base: ghcr.io/gitguardian/wolfi/bun — Wolfi is glibc (so native agent
-# binaries run) but apk-based (Alpine-small). The agent runtime itself lives
-# in the PinP podman, not here; this container is the control plane only.
+# Base: Chainguard Wolfi (glibc + apk). Wolfi is glibc (so native agent binaries
+# run) but apk-based (Alpine-small); Bun comes from the Wolfi package, so the
+# image stays a plain `wolfi-base` rather than an apko-built distroless variant
+# (which has no shell and cannot run `apk`/`RUN` steps). The agent runtime
+# itself lives in the PinP podman, not here; this container is the control plane
+# only.
 
-FROM ghcr.io/gitguardian/wolfi/bun:latest
+FROM docker.io/chainguard/wolfi-base:latest
 
 # Wolfi runs as non-root (UID 65532) by default; install as root, drop back.
 USER root
@@ -21,7 +24,7 @@ ENV HERDR_INSTALL_DIR=/usr/local/bin
 # --- Developer toolbox (Wolfi apk). Names differ from Debian:               ---
 #     exa -> eza, batcat -> bat, fd-find -> fd, dnsutils -> bind-tools.       ---
 RUN apk add --no-cache \
-        bash ca-certificates curl git gh git-lfs jq make less rsync unzip xz \
+        bash bun ca-certificates curl git gh git-lfs jq make less rsync unzip xz \
         fish fzf zoxide eza bat btop direnv ripgrep htop procps lsof tree \
         netcat-openbsd socat iproute2 bind-tools openssh \
         python-3.12 py3.12-pip vim podman \

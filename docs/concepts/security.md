@@ -69,6 +69,6 @@ ai-memory stores agent prompts, tool calls and consolidated memory. It is a serv
 
 ## Supply chain
 
-The control-plane, PinP and ai-memory images track configurable upstream versions (Wolfi bun, podman, VibePod, Herdr, ai-memory, Pi, Claude Code, ZCode). `ai-memory` is built locally from the upstream release tarball (pinned via `AI_MEMORY_VERSION`) on a `debian:bookworm-slim` runtime rather than pulled from Docker Hub; the Pi workload image is Debian + Node for the same reason (hosts without x86-64-v2). For a more reproducible deployment, pin reviewed versions and update them deliberately.
+The control-plane, PinP and ai-memory images track configurable upstream versions (Wolfi bun, podman, VibePod, Herdr, ai-memory, Pi-Bolt, Claude Code, ZCode). `ai-memory` is built locally from the upstream release tarball (pinned via `AI_MEMORY_VERSION`) on a `chainguard/wolfi-base` runtime rather than pulled from Docker Hub; the Pi workload image is Wolfi + Pi-Bolt plus the native Claude Code binary. For a more reproducible deployment, pin reviewed versions and update them deliberately.
 
 See [Architecture](architecture.md) for the complete runtime model.

@@ -523,10 +523,10 @@ reaches it through the `host.openshell.internal` alias (which maps to
 `host_gateway_ip`, `127.0.0.1` on native Linux).
 
 !!! note "Image base"
-    The ai-memory image is Debian-based (`debian:bookworm-slim`), which runs on
-    baseline x86-64 — including hosts whose CPU lacks x86-64-v2, where a Wolfi
-    base dies with `Fatal glibc error: CPU does not support x86-64-v2`. To skip
-    the local build, `--no-build` uses a prebuilt image:
+    The ai-memory image is Wolfi-based (`chainguard/wolfi-base`): glibc plus apk,
+    consistent with the control plane and the Pi workload image. The build host
+    needs x86-64-v2, since Wolfi's glibc is built for it. To skip the local
+    build, `--no-build` uses a prebuilt image:
 
     ```bash
     podman pull docker.io/akitaonrails/ai-memory:latest
@@ -587,18 +587,12 @@ which reads `AI_MEMORY_AUTH_TOKEN` from the environment at run time, so what the
 sandbox holds is the provider's opaque placeholder and the supervisor substitutes
 the real key at the endpoint. Claude Code and ZCode are installed alongside Pi.
 
-!!! warning "CPU compatibility: hosts without SSE4.2"
-    The image is **Debian + Node**, not Wolfi and not pi-bolt, because the target
-    CPU is x86-64 baseline (no SSE4.2):
-
-    | Component | Result | Why |
-    |---|---|---|
-    | Wolfi base | fails | glibc built for x86-64-v2: `Fatal glibc error: CPU does not support x86-64-v2` |
-    | pi-bolt | fails | AOT binary requires SSE4.2, `x64-baseline` included: *"Pi-Bolt needs a CPU with SSE4.2"* |
-    | `@earendil-works/pi-coding-agent` (Node) | runs | pure JavaScript |
-    | Claude Code 2.1.113+ | hangs | native binary spins at 100% CPU; the image pins **2.1.112**, the last pure-JS release |
-    | ZCode (`zcode-app-cli`) | runs | Node-based |
-    | Bun global installs | hang | `bun add -g` spins at 100% CPU; the image uses `npm` throughout |
+!!! note "Host CPU requirement: x86-64-v2"
+    The image is **Wolfi + Pi-Bolt** plus the native Claude Code binary. All
+    three need x86-64-v2 (SSE4.2): on a baseline-only CPU the build fails with
+    `Fatal glibc error: CPU does not support x86-64-v2`, or the agent exits with
+    *"Pi-Bolt needs a CPU with SSE4.2"*. Any modern VPS plan provides v2 —
+    verify with `ld.so --help` (look for `x86-64-v2 (supported, searched)`).
 
     OpenShell also rejects a workload image whose declared user is root
     (*"workload identity must not contain UID or GID zero"*), so the image ends
@@ -623,9 +617,9 @@ the real key at the endpoint. Claude Code and ZCode are installed alongside Pi.
 | Login fails with an issuer mismatch | `issuer` missing its trailing slash | Use `https://<idp>/auth/v1/` exactly |
 | Sandbox stuck in `Error`; reason mentions `getent`/`passwd database` | The gateway auto-selected the **Docker** driver (Podman socket down, Docker present) | Pin `compute_driver = "podman"` in `gateway.toml` and `systemctl --user enable --now podman.socket` |
 | `provider credentials are not declared by profile` | `--credential` used the credential name | Use the env var name, e.g. `--credential AI_MEMORY_AUTH_TOKEN=…` |
-| `Fatal glibc error: CPU does not support x86-64-v2` | A Wolfi-based image on a CPU without v2 | Use a Debian-based image; the Pi workload image and ai-memory both are |
-| `Pi-Bolt needs a CPU with SSE4.2` | pi-bolt on an x86-64-baseline CPU | Use the standard Pi agent (the Pi workload image does) |
-| Claude Code hangs at 100% CPU | Native Claude Code 2.1.113+ on a CPU without SSE4.2 | Pin `@anthropic-ai/claude-code@2.1.112` (last pure-JS release) |
+| `Fatal glibc error: CPU does not support x86-64-v2` | A Wolfi-based image on a host without x86-64-v2 | The host needs x86-64-v2; move the VM to a newer plan/host |
+| `Pi-Bolt needs a CPU with SSE4.2` | Pi-Bolt on an x86-64-baseline CPU | The host needs SSE4.2/x86-64-v2 |
+| Claude Code hangs at 100% CPU | Native Claude Code on a CPU without SSE4.2 | The host needs SSE4.2/x86-64-v2 |
 | `workload identity must not contain UID or GID zero` | Workload image's `USER` is root | End the image with `USER 1000:1000` |
 | `not a member of workspace 'default'` | Identity has no workspace membership | `openshell workspace member add --workspace default --subject <sub> --role admin` (see Part 2.3) |
 | Preflight `category=malformed` with `OPENSHELL_ENABLE_MTLS_AUTH=true` | mTLS needs a client CA + listener cert/key | Also set `OPENSHELL_TLS_CERT` / `OPENSHELL_TLS_KEY` / `OPENSHELL_TLS_CLIENT_CA` (Part 2.2) |

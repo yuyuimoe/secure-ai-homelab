@@ -22,7 +22,7 @@ Three containers share one rootless pod (one network namespace):
 
 1. **`vibepod`** — the long-lived control plane. It contains the VibePod CLI (`vp`), Herdr (terminal multiplexer), the Fish developer shell, the podman client, and the ai-memory CLI. It is *not* where agents execute.
 2. **`pinp`** — the inner Podman daemon. `vp run <agent>` talks to it over a shared unix socket and spawns agent containers inside it. This is the Podman equivalent of the old Docker-in-Docker sidecar.
-3. **`ai-memory`** — a long-term memory server (HTTP MCP at `/mcp`, lifecycle `/hook`, web UI) shared by every agent. Built locally from the upstream release binary on a Debian base (`docker/ai-memory/Containerfile`).
+3. **`ai-memory`** — a long-term memory server (HTTP MCP at `/mcp`, lifecycle `/hook`, web UI) shared by every agent. Built locally from the upstream release binary on a Wolfi base (`docker/ai-memory/Containerfile`).
 
 Everything runs **rootless**: the pod is a set of Podman **quadlets** (systemd user units), with **pasta** providing rootless networking.
 
@@ -34,7 +34,7 @@ VibePod replaces Codex as the agent runner. There is no `DOCKER_HOST`:
 - the PinP socket is mounted at podman's default path (`/run/podman/podman.sock`) in the control plane;
 - `CONTAINER_HOST` is set only as a belt-and-suspenders hint.
 
-The default agent is `pi`, whose image is the standard Pi coding agent (`vibepod/pi:latest`) — built directly into PinP, so no registry is involved. Claude Code and ZCode are additional harnesses in the same agent set.
+The default agent is `pi`, whose image is Pi-Bolt (`vibepod/pi:latest`) — built directly into PinP, so no registry is involved. Claude Code and ZCode are additional harnesses in the same agent set.
 
 ## The Pi agent image
 
@@ -42,20 +42,20 @@ The default agent is `pi`, whose image is the standard Pi coding agent (`vibepod
 
 | | Before (VibePod `pi`) | Here |
 |---|---|---|
-| base | `node:22-slim` | `node:22-slim` (Debian, glibc baseline) |
-| agent | `@earendil-works/pi-coding-agent` | standard Pi (pure JS on Node) |
-| `pi` command | bundled | `pi` (npm bin) |
-| `~/.pi` mount | kept | kept (Pi reads `~/.pi/agent`) |
-| extra harnesses | — | Claude Code (`2.1.112`) + ZCode |
+| base | `node:22-slim` | `ghcr.io/gitguardian/wolfi/bun` (glibc + apk) |
+| agent | `@earendil-works/pi-coding-agent` | Pi-Bolt (AOT-compiled Pi, native binary) |
+| `pi` command | bundled | `pi` aliased to `pi-bolt` |
+| `~/.pi` mount | kept | kept (Pi-Bolt is Pi; reads `~/.pi/agent`) |
+| extra harnesses | — | Claude Code (native installer) + ZCode |
 | ai-memory | — | bridge extension baked in (`ai-memory install-hooks --agent pi`) |
 
-The image is **Debian + Node, not Wolfi and not pi-bolt**, so it runs on hosts
-whose CPU lacks SSE4.2 (x86-64 baseline): there Wolfi's glibc dies with `Fatal
-glibc error: CPU does not support x86-64-v2`, and pi-bolt exits with *"Pi-Bolt
-needs a CPU with SSE4.2"*. Claude Code is pinned to `2.1.112` because 2.1.113+ is
-a native binary that spins at 100% CPU on such hosts; Bun's global installer
-hangs there too, so the image uses `npm`. It ends with `USER 1000:1000` because
-OpenShell rejects a root workload identity.
+Wolfi is glibc, which the native Pi-Bolt and Claude Code binaries require; a
+musl/Alpine base would not work. Pi-Bolt's native binary is downloaded at
+**build** time (with the runtime `HOME`) rather than on first run, because an
+OpenShell sandbox has deny-by-default network and could not fetch it at run
+time. The host needs x86-64-v2: Wolfi's glibc is built for it, and Pi-Bolt and
+the native Claude Code binary both need SSE4.2. The image ends with
+`USER 1000:1000` because OpenShell rejects a root workload identity.
 
 The agent's `HOME` is `/config` (the persisted VibePod agent config dir), so `~/.pi/agent`, `~/.claude` and `~/.zcode` all survive container replacement.
 
@@ -65,12 +65,12 @@ Upstream publishes `akitaonrails/ai-memory` with a Debian runtime stage. Homelab
 
 | | Upstream | Here |
 |---|---|---|
-| runtime base | `debian:bookworm-slim` | `debian:bookworm-slim` (glibc baseline) |
+| runtime base | `debian:bookworm-slim` | `chainguard/wolfi-base` (glibc + apk) |
 | binary | compiled in-image (Rust builder) | pinned upstream release tarball (`AI_MEMORY_VERSION=2.6.3`) |
 | service user | `ai-memory` uid 1000 | `ai-memory` uid 1000 |
 | source | Docker Hub pull | built locally (fully self-hosted) |
 
-The release binary is glibc-linked and needs only glibc/libgcc/zlib — all present in the Debian base — plus CA certificates for outgoing HTTPS to LLM providers. The Debian base (not Wolfi) is what lets it run on CPUs without x86-64-v2.
+The release binary is glibc-linked and needs only glibc/libgcc/zlib — all present in Wolfi — plus CA certificates for outgoing HTTPS to LLM providers.
 
 ## Persistence boundary
 

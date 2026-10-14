@@ -31,8 +31,8 @@ podman build \
 
 echo "Rebuilding the Pi agent image into PinP..."
 podman --url "$SOCKET" build \
-  --build-arg "PI_VERSION=${PI_VERSION:-latest}" \
-  --build-arg "CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION:-2.1.112}" \
+  --build-arg "PI_BOLT_VERSION=${PI_BOLT_VERSION:-latest}" \
+  --build-arg "CLAUDE_CODE_CHANNEL=${CLAUDE_CODE_CHANNEL:-latest}" \
   --build-arg "ZCODE_VERSION=${ZCODE_VERSION:-latest}" \
   --build-arg "AI_MEMORY_CLI_IMAGE=${AI_MEMORY_CLI_IMAGE:-docker.io/akitaonrails/ai-memory:latest}" \
   -t vibepod/pi:latest -f "$ROOT_DIR/docker/pi/Containerfile" "$ROOT_DIR/docker/pi"

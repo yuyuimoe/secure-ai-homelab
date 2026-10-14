@@ -2,50 +2,76 @@
 #
 # Runs inside OpenShell sandboxes (and, legacy, as VibePod's `pi` agent).
 #
-# Debian + Node, not Wolfi and not pi-bolt, because the target host CPU has no
-# SSE4.2 (x86-64 baseline only):
-#   * Wolfi's glibc is built for x86-64-v2: `Fatal glibc error: CPU does not
-#     support x86-64-v2`.
-#   * pi-bolt is an AOT native binary that requires SSE4.2 (`x64-baseline` too),
-#     so it cannot run at all: "Pi-Bolt needs a CPU with SSE4.2".
-#   * Claude Code 2.1.113+ is a native binary that spins at 100% CPU on such a
-#     host; 2.1.112 is the last pure-JS release and runs on Node.
-#   * Bun's global installer hangs on such a host, so npm is used throughout.
-# The standard Pi agent (`@earendil-works/pi-coding-agent`) is pure JS on Node.
+# Base: Wolfi (glibc + apk) with Bun. Wolfi gives glibc — required by the
+# native agent binaries (pi-bolt and Claude Code) — while staying Alpine-small
+# and CVE-light, consistent with the control-plane and ai-memory images. The
+# `pi` command is Pi-Bolt, VibePod's AOT-compiled Pi.
+#
+# The host must support x86-64-v2: Wolfi's glibc is built for it, and pi-bolt /
+# native Claude Code need SSE4.2. On a baseline-only CPU the build or the agent
+# fails ("Fatal glibc error: CPU does not support x86-64-v2" / "Pi-Bolt needs a
+# CPU with SSE4.2").
+#
+# Pi-Bolt's native binary is normally fetched on first run into ~/.pi-bolt. That
+# fetch happens here at build time with the runtime HOME so the image is
+# self-contained — an OpenShell sandbox has deny-by-default network and could
+# not download it at run time.
 
-ARG AI_MEMORY_IMAGE=docker.io/akitaonrails/ai-memory:latest
+ARG AI_MEMORY_CLI_IMAGE=docker.io/akitaonrails/ai-memory:latest
 
 # ai-memory CLI, used only to generate Pi's bridge extension at build time.
-FROM ${AI_MEMORY_IMAGE} AS memory
+FROM ${AI_MEMORY_CLI_IMAGE} AS memory
 
-FROM docker.io/library/node:22-slim
+FROM docker.io/chainguard/wolfi-base:latest
 
 USER root
 
-ARG PI_VERSION=latest
+ARG PI_BOLT_VERSION=latest
+ARG CLAUDE_CODE_CHANNEL=latest
 ARG ZCODE_VERSION=latest
-ARG CLAUDE_CODE_VERSION=2.1.112
 # Where sandboxes reach ai-memory (the OpenShell supervisor aliases it to host
 # loopback). Must match deploy/ai-memory/provider-profile.yaml.
 ARG AI_MEMORY_SERVER_URL=http://host.openshell.internal:49374
 
-ENV HOME=/root
+# Bun installs global packages under $BUN_INSTALL/bin.
+ENV BUN_INSTALL=/usr/local \
+    HOME=/root \
+    PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        bash ca-certificates curl git gosu jq openssl passwd ripgrep tar xz-utils \
-    && rm -rf /var/lib/apt/lists/*
+# coreutils: Pi-Bolt's first-run installer checks its download with
+# `sha256sum -c --quiet`, which busybox's sha256sum does not support (it would
+# report a false "checksum mismatch"). The GNU sha256sum is required.
+RUN apk add --no-cache \
+        bash bun ca-certificates coreutils curl git gosu jq openssl ripgrep xz \
+    && rm -rf /var/cache/apk/*
 
-# --- Pi (standard agent, pure JS on Node). `pi` is the real Pi command. -----
-RUN npm install -g "@earendil-works/pi-coding-agent@${PI_VERSION}" \
-    && pi --version
+# Bun is a drop-in replacement for Node, so tools that shell out to `node`
+# (ZCode's launcher, Pi extensions) get a runtime without a second JS engine.
+# Caveat: Bun's node mode does not implement `node --version`/`-v` (it does
+# support scripts, shebangs and `-p`), so a tool that gates on the Node version
+# string will misbehave here.
+RUN mkdir -p /usr/local/bin && ln -sf "$(command -v bun)" /usr/local/bin/node
 
-# --- Claude Code, pinned to the last pure-JS release. ----------------------
-RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+# --- Pi-Bolt (native Pi). `bun add -g --trust` runs the package's postinstall
+# (places the launcher); running it once with the runtime HOME bakes the native
+# binary so a sandbox never has to fetch it. `pi` is aliased to it so
+# `vp run pi` / `pi` behave identically.
+RUN bun add -g --trust "pi-bolt@${PI_BOLT_VERSION}" \
+    && ln -sf /usr/local/bin/pi-bolt /usr/local/bin/pi \
+    && mkdir -p /config \
+    && HOME=/config pi-bolt --version
+
+# --- Claude Code (native installer; glibc binary). Installed under a
+# world-readable prefix because the workload runs as a non-root USER. ---------
+RUN mkdir -p /opt/claude \
+    && curl -fsSL https://claude.ai/install.sh | HOME=/opt/claude bash -s "${CLAUDE_CODE_CHANNEL}" \
+    && chmod -R a+rX /opt/claude \
+    && ln -sf /opt/claude/.local/bin/claude /usr/local/bin/claude \
     && claude --version
 
-# --- ZCode (Node-based TUI). -----------------------------------------------
-RUN npm install -g "zcode-app-cli@${ZCODE_VERSION}" \
+# --- ZCode (terminal client for the ZCode agent runtime). Its launcher shells
+# out to `node`, which here is Bun (see the `node` symlink above). ------------
+RUN bun add -g "zcode-app-cli@${ZCODE_VERSION}" \
     && zcode --version
 
 # --- ai-memory bridge for Pi -----------------------------------------------
@@ -77,10 +103,11 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 0755 /usr/local/bin/entrypoint.sh
 
 # OpenShell rejects a workload image whose declared UID/GID is 0 ("workload
-# identity must not contain UID or GID zero"). Run as 1000 (the node image's
-# `node` user); the entrypoint still honours VibePod's USER_UID/USER_GID remap
-# when it happens to start as root.
-RUN chown -R 1000:1000 /config /workspace
+# identity must not contain UID or GID zero"). Run as 1000; the entrypoint still
+# honours VibePod's USER_UID/USER_GID remap when it happens to start as root.
+RUN addgroup -g 1000 pi \
+    && adduser -u 1000 -G pi -h /config -s /bin/bash -D pi \
+    && chown -R 1000:1000 /config /workspace
 USER 1000:1000
 
 WORKDIR /workspace
