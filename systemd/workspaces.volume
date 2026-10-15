@@ -1,9 +1,0 @@
-# Project workspaces. Mounted at /home/developer/workspaces in BOTH the
-# control plane and PinP so `vp run <agent> -w /home/developer/workspaces/<p>`
-# resolves the bind-mount source inside the inner podman. Replace with a bind
-# mount to a host directory if you want the code reachable from the host FS.
-
-[Volume]
-
-[Install]
-WantedBy=default.target

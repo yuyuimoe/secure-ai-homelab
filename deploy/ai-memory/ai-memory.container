@@ -1,6 +1,6 @@
 # ai-memory — long-term memory server for OpenShell sandboxes.
 #
-# Standalone rootless Podman quadlet (NOT in the VibePod pod). Agents in
+# Standalone rootless Podman quadlet for the OpenShell path. Agents in
 # OpenShell sandboxes reach it through the supervisor at
 # http://host.openshell.internal:49374. Install with scripts/install-ai-memory.sh.
 

@@ -4,8 +4,7 @@ Run a shared NVIDIA **OpenShell** gateway on a Debian VPS, reachable only throug
 **Pangolin**'s zero-trust VPN, with **Rauthy** as the OIDC identity provider. One
 Rauthy account signs you into both Pangolin and OpenShell.
 
-This is the primary recipe for Secure AI Homelab. The [VibePod Homelab](#previous-approach-vibepod-homelab)
-pages describe the earlier single-host approach.
+This is the primary recipe for Secure AI Homelab.
 
 ## What this gives you
 
@@ -524,15 +523,8 @@ reaches it through the `host.openshell.internal` alias (which maps to
 
 !!! note "Image base"
     The ai-memory image is Wolfi-based (`chainguard/wolfi-base`): glibc plus apk,
-    consistent with the control plane and the Pi workload image. The build host
-    needs x86-64-v2, since Wolfi's glibc is built for it. To skip the local
-    build, `--no-build` uses a prebuilt image:
-
-    ```bash
-    podman pull docker.io/akitaonrails/ai-memory:latest
-    podman tag  docker.io/akitaonrails/ai-memory:latest localhost/secure-ai-homelab/ai-memory:latest
-    ./scripts/install-ai-memory.sh --no-build
-    ```
+    consistent with the Pi workload image. The build host needs x86-64-v2 or
+    newer, since Wolfi's glibc is built for v2.
 
 ### 6.2 Give each person a key
 
@@ -587,12 +579,11 @@ which reads `AI_MEMORY_AUTH_TOKEN` from the environment at run time, so what the
 sandbox holds is the provider's opaque placeholder and the supervisor substitutes
 the real key at the endpoint. Claude Code and ZCode are installed alongside Pi.
 
-!!! note "Host CPU requirement: x86-64-v2"
+!!! note "Host CPU requirement: x86-64-v2 or newer"
     The image is **Wolfi + Pi-Bolt** plus the native Claude Code binary. All
-    three need x86-64-v2 (SSE4.2): on a baseline-only CPU the build fails with
-    `Fatal glibc error: CPU does not support x86-64-v2`, or the agent exits with
-    *"Pi-Bolt needs a CPU with SSE4.2"*. Any modern VPS plan provides v2 —
-    verify with `ld.so --help` (look for `x86-64-v2 (supported, searched)`).
+    three need x86-64-v2 (SSE4.2), so the host must be x86-64-v2 or newer.
+    `scripts/check-openshell-host.sh` reports the level it detects; `ld.so
+    --help` should also list `x86-64-v2 (supported, searched)`.
 
     OpenShell also rejects a workload image whose declared user is root
     (*"workload identity must not contain UID or GID zero"*), so the image ends
@@ -617,9 +608,6 @@ the real key at the endpoint. Claude Code and ZCode are installed alongside Pi.
 | Login fails with an issuer mismatch | `issuer` missing its trailing slash | Use `https://<idp>/auth/v1/` exactly |
 | Sandbox stuck in `Error`; reason mentions `getent`/`passwd database` | The gateway auto-selected the **Docker** driver (Podman socket down, Docker present) | Pin `compute_driver = "podman"` in `gateway.toml` and `systemctl --user enable --now podman.socket` |
 | `provider credentials are not declared by profile` | `--credential` used the credential name | Use the env var name, e.g. `--credential AI_MEMORY_AUTH_TOKEN=…` |
-| `Fatal glibc error: CPU does not support x86-64-v2` | A Wolfi-based image on a host without x86-64-v2 | The host needs x86-64-v2; move the VM to a newer plan/host |
-| `Pi-Bolt needs a CPU with SSE4.2` | Pi-Bolt on an x86-64-baseline CPU | The host needs SSE4.2/x86-64-v2 |
-| Claude Code hangs at 100% CPU | Native Claude Code on a CPU without SSE4.2 | The host needs SSE4.2/x86-64-v2 |
 | `workload identity must not contain UID or GID zero` | Workload image's `USER` is root | End the image with `USER 1000:1000` |
 | `not a member of workspace 'default'` | Identity has no workspace membership | `openshell workspace member add --workspace default --subject <sub> --role admin` (see Part 2.3) |
 | Preflight `category=malformed` with `OPENSHELL_ENABLE_MTLS_AUTH=true` | mTLS needs a client CA + listener cert/key | Also set `OPENSHELL_TLS_CERT` / `OPENSHELL_TLS_KEY` / `OPENSHELL_TLS_CLIENT_CA` (Part 2.2) |
@@ -634,14 +622,3 @@ the real key at the endpoint. Claude Code and ZCode are installed alongside Pi.
 - Prefer per-user certificates or OIDC. A shared client bundle has no revocable
   identity.
 - Pin the Rauthy image tag (`deploy/rauthy/rauthy.container`) and review updates.
-- See [Security](../concepts/security.md) for the general model.
-
-## Previous approach: VibePod Homelab
-
-The VibePod pages below describe the earlier design: a single rootless Podman pod
-with Podman-in-Podman, a shared credential store and a shared workspace volume. It
-is appropriate for **one trusted operator**. It is not multi-tenant, so it is kept
-here for reference rather than as the recommended path.
-
-- [Architecture](../concepts/architecture.md)
-- [Deployment](../reference/deployment.md)

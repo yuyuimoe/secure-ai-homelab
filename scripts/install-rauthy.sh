@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Install the Rauthy OIDC identity provider as rootless Podman quadlets.
 #
-# Mirrors scripts/install.sh: copies deploy/rauthy/*.container|*.volume into
-# ~/.config/containers/systemd/, generates the env file, reloads systemd.
+# Copies deploy/rauthy/*.container|*.volume into ~/.config/containers/systemd/,
+# generates the env file, reloads systemd.
 #
 # Usage: ./scripts/install-rauthy.sh [idp-domain] [port]
 #

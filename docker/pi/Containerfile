@@ -1,16 +1,14 @@
 # Secure AI Homelab — Pi workload image.
 #
-# Runs inside OpenShell sandboxes (and, legacy, as VibePod's `pi` agent).
+# Runs inside OpenShell sandboxes.
 #
 # Base: Wolfi (glibc + apk) with Bun. Wolfi gives glibc — required by the
 # native agent binaries (pi-bolt and Claude Code) — while staying Alpine-small
-# and CVE-light, consistent with the control-plane and ai-memory images. The
-# `pi` command is Pi-Bolt, VibePod's AOT-compiled Pi.
+# and CVE-light, consistent with the ai-memory image. The `pi` command is
+# Pi-Bolt, an AOT-compiled Pi.
 #
-# The host must support x86-64-v2: Wolfi's glibc is built for it, and pi-bolt /
-# native Claude Code need SSE4.2. On a baseline-only CPU the build or the agent
-# fails ("Fatal glibc error: CPU does not support x86-64-v2" / "Pi-Bolt needs a
-# CPU with SSE4.2").
+# The host must support x86-64-v2 or newer: Wolfi's glibc is built for v2, and
+# pi-bolt / native Claude Code need SSE4.2.
 #
 # Pi-Bolt's native binary is normally fetched on first run into ~/.pi-bolt. That
 # fetch happens here at build time with the runtime HOME so the image is
@@ -42,7 +40,7 @@ ENV BUN_INSTALL=/usr/local \
 # `sha256sum -c --quiet`, which busybox's sha256sum does not support (it would
 # report a false "checksum mismatch"). The GNU sha256sum is required.
 RUN apk add --no-cache \
-        bash bun ca-certificates coreutils curl git gosu jq openssl ripgrep xz \
+        bash bun ca-certificates coreutils curl git jq openssl ripgrep xz \
     && rm -rf /var/cache/apk/*
 
 # Bun is a drop-in replacement for Node, so tools that shell out to `node`
@@ -86,8 +84,8 @@ RUN mkdir -p /config /tmp/ai-memory-build \
     && rm -rf /tmp/ai-memory-build \
     && test -f /config/.pi/agent/extensions/ai-memory-pi.ts
 
-# Runtime HOME is the agent config dir (VibePod mounts the persisted config
-# there), mirroring the upstream VibePod pi image's /config layout.
+# Runtime HOME is the agent config dir, mirroring the upstream Pi image's
+# /config layout.
 ENV HOME=/config \
     SHELL=/bin/bash \
     TERM=xterm-256color \
@@ -103,8 +101,7 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 0755 /usr/local/bin/entrypoint.sh
 
 # OpenShell rejects a workload image whose declared UID/GID is 0 ("workload
-# identity must not contain UID or GID zero"). Run as 1000; the entrypoint still
-# honours VibePod's USER_UID/USER_GID remap when it happens to start as root.
+# identity must not contain UID or GID zero"), so run as 1000.
 RUN addgroup -g 1000 pi \
     && adduser -u 1000 -G pi -h /config -s /bin/bash -D pi \
     && chown -R 1000:1000 /config /workspace

@@ -5,8 +5,8 @@
 # stage; Wolfi provides the same glibc contract the glibc-linked Rust release
 # binary needs (glibc/libgcc/zlib plus CA certificates for outgoing HTTPS to LLM
 # providers) while staying Alpine-small and CVE-light, and consistent with the
-# control-plane and Pi images. The host must support x86-64-v2, since Wolfi's
-# glibc is built for it.
+# Pi image. The host must support x86-64-v2 or newer, since Wolfi's glibc is
+# built for v2 (v3/v4 hosts are fine).
 
 FROM docker.io/chainguard/wolfi-base:latest
 

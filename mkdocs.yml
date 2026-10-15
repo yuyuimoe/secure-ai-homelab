@@ -1,5 +1,5 @@
 site_name: Secure AI Homelab
-site_description: Self-hosted secure AI agent homelab — OpenShell over Pangolin with Rauthy OIDC, plus the earlier VibePod Homelab stack
+site_description: Self-hosted secure AI agent homelab — OpenShell over Pangolin with Rauthy OIDC
 site_url: https://yuyuimoe.github.io/secure-ai-homelab/
 repo_name: yuyuimoe/secure-ai-homelab
 repo_url: https://github.com/yuyuimoe/secure-ai-homelab
@@ -9,15 +9,6 @@ nav:
   - Home: index.md
   - OpenShell + Pangolin:
       - Recipe: guides/openshell-pangolin.md
-  - VibePod Homelab (previous):
-      - Installation: getting-started/installation.md
-      - Architecture: concepts/architecture.md
-      - Security: concepts/security.md
-      - PinP development: guides/pinp-development.md
-      - Developer shell: guides/developer-shell.md
-      - CLI reference: reference/cli.md
-      - Configuration: reference/configuration.md
-      - Deployment: reference/deployment.md
 
 theme:
   name: material

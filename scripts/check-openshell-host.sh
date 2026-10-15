@@ -295,6 +295,34 @@ case "$ARCH" in
   *) warn "architecture $ARCH" "OpenShell release binaries target x86_64 and aarch64" ;;
 esac
 
+# x86-64 microarchitecture level. The workload images are Wolfi-based, so their
+# glibc is built for x86-64-v2, and Pi-Bolt / the native Claude Code binary need
+# SSE4.2. v2 is therefore a hard floor; a v3/v4 host (e.g. the Fusion-plan VPS)
+# satisfies it and needs no baseline workaround.
+if [[ $ARCH == x86_64 ]]; then
+  cpu_flags=" $(awk -F: '/^flags/{print $2; exit}' /proc/cpuinfo) "
+  cpu_flag() { [[ $cpu_flags == *" $1 "* ]]; }
+  cpu_level=""
+  { cpu_flag cx16 && cpu_flag lahf_lm && cpu_flag popcnt && \
+    cpu_flag sse4_1 && cpu_flag sse4_2 && cpu_flag ssse3; } && cpu_level="x86-64-v2"
+  { [[ $cpu_level == x86-64-v2 ]] && cpu_flag avx && cpu_flag avx2 && \
+    cpu_flag bmi1 && cpu_flag bmi2 && cpu_flag f16c && cpu_flag fma && \
+    cpu_flag movbe && cpu_flag xsave && { cpu_flag abm || cpu_flag lzcnt; }; } && cpu_level="x86-64-v3"
+  { [[ $cpu_level == x86-64-v3 ]] && cpu_flag avx512f && cpu_flag avx512bw && \
+    cpu_flag avx512cd && cpu_flag avx512dq && cpu_flag avx512vl; } && cpu_level="x86-64-v4"
+  if [[ -n $cpu_level ]]; then
+    pass "CPU microarchitecture level: $cpu_level (SSE4.2 + POPCNT present)"
+  else
+    fail "CPU does not meet x86-64-v2 (need SSE4.2 + POPCNT)" \
+         "Wolfi's glibc exits with 'Fatal glibc error: CPU does not support x86-64-v2'; Pi-Bolt and Claude Code need SSE4.2"
+  fi
+  # glibc prints its search list highest-priority first; the first level marked
+  # supported is the hwcaps level it will actually use on this host.
+  hwcaps="$( (ld.so --help 2>/dev/null || /lib64/ld-linux-x86-64.so.2 --help 2>/dev/null) \
+             | grep -oE 'x86-64-v[0-9]+ *\(supported' | grep -oE 'x86-64-v[0-9]+' | head -1 )"
+  [[ -n $hwcaps ]] && note "glibc will use hwcaps level: $hwcaps"
+fi
+
 if kern_ge "$KREL" "6.2"; then
   pass "kernel $KREL >= 6.2 (Landlock ABI 3 baseline)"
 else

@@ -1,6 +1,0 @@
-# ai-memory data: the git-backed memory wiki + derived index (/data).
-
-[Volume]
-
-[Install]
-WantedBy=default.target
